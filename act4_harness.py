@@ -126,7 +126,7 @@ async def run_with_review(agent, session, task, outreach, reviewer, recorder, ru
 
 async def run_harness(recorder, *, model=MODEL, scenario="event-shortage", fixture=False,
                    document="clean", demo_compaction=False, simulate_detector_miss=False,
-                   customer_id="customer-a", remember_preferences=(), memory_path=None,
+                   customer_id=None, remember_preferences=(), memory_path=None,
                    output_root=None, reviewer=None, decision_source="human", progress=None,
                    api_client=None, execution_mode="live", skills_files=None, prompt=None):
     skills_enabled = skills_files is not None
@@ -134,13 +134,15 @@ async def run_harness(recorder, *, model=MODEL, scenario="event-shortage", fixtu
         raise ValueError("Act 4 supports event-shortage; Act 5 also supports tasting-plan and stock-question.")
     if document not in load_json("vendor_documents.json"):
         raise ValueError("Unknown vendor document.")
+    request = load_scenario("standard" if scenario in {"tasting-plan", "stock-question"} else scenario)
+    customer_id = request.customer_id if customer_id is None else customer_id
     if customer_id not in {c["customer_id"] for c in load_json("customers.json")}:
         raise ValueError("Choose a synthetic customer from customers.json.")
     if simulate_detector_miss and not fixture:
         raise ValueError("The forced detector-miss demonstration is restricted to --fixture.")
     if execution_mode not in {"live", "fixture"} or (execution_mode == "fixture" and not fixture and api_client is None):
         raise ValueError("Fixture mode requires an explicitly local client or --fixture.")
-    request = load_scenario("standard" if scenario in {"tasting-plan", "stock-question"} else scenario).model_copy(
+    request = request.model_copy(
         update={"customer_id": customer_id, "preferences": tuple(remember_preferences)})
     store, brief = Store(), load_json("event_brief.json")
     if scenario == "tasting-plan":

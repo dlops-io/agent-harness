@@ -73,7 +73,7 @@ class OutreachTests(RecordingTest):
         html = Path(first["path"]).read_text()
         self.assertIn("&lt;img", html)
         self.assertNotIn("<img", html)
-        self.assertNotIn("customer-a", html)
+        self.assertNotIn("pavlos", html)
         self.assertNotIn("French cheeses", html)
         self.assertFalse(first["email_transmitted"])
 
@@ -169,17 +169,17 @@ class MemoryAndRetrievalTests(RecordingTest):
         path = self.root / "memory.sqlite"
         memory = PreferenceMemory(path)
         try:
-            memory.remember("customer-a", "customer-a", ["Prefer Italian today"], self.recorder, self.run_id)
+            memory.remember("pavlos", "pavlos", ["Prefer Italian today"], self.recorder, self.run_id)
             with self.assertRaises(PolicyBlocked):
-                memory.load("customer-a", "customer-b", self.recorder, self.run_id)
+                memory.load("pavlos", "shivas", self.recorder, self.run_id)
             with self.assertRaises(PolicyBlocked):
-                memory.remember("customer-a", "customer-b", ["corrupted"], self.recorder, self.run_id)
+                memory.remember("pavlos", "shivas", ["corrupted"], self.recorder, self.run_id)
         finally:
             memory.close()
         memory = PreferenceMemory(path)
         try:
-            self.assertIn("Prefer Italian today", memory.load("customer-a", "customer-a", self.recorder, self.run_id))
-            self.assertNotIn("corrupted", memory.load("customer-b", "customer-b", self.recorder, self.run_id))
+            self.assertIn("Prefer Italian today", memory.load("pavlos", "pavlos", self.recorder, self.run_id))
+            self.assertNotIn("corrupted", memory.load("shivas", "shivas", self.recorder, self.run_id))
         finally:
             memory.close()
 
@@ -192,8 +192,8 @@ class MemoryAndRetrievalTests(RecordingTest):
                 raise sqlite3.OperationalError("Audit unavailable")
             return original(run_id, name, payload, **kwargs)
         with patch.object(self.recorder, "event", side_effect=event), self.assertRaises(sqlite3.OperationalError):
-            memory.remember("customer-a", "customer-a", ["should roll back"], self.recorder, self.run_id)
-        self.assertNotIn("should roll back", memory.load("customer-a", "customer-a", self.recorder, self.run_id))
+            memory.remember("pavlos", "pavlos", ["should roll back"], self.recorder, self.run_id)
+        self.assertNotIn("should roll back", memory.load("pavlos", "pavlos", self.recorder, self.run_id))
 
     def test_heuristic_detects_attack_and_exposes_quoted_false_positive(self):
         expected = {"clean": False, "malicious": True, "benign": False, "quoted": True}
@@ -292,17 +292,26 @@ class HarnessTests(RecordingTest):
         self.assertIn("decline", inputs[-1]["capsule"]["email_decisions"].values())
         self.assertFalse(result["order_placed"])
 
+    def test_default_customer_follows_scenario_identity(self):
+        request = load_scenario("event-shortage").model_copy(update={"customer_id": "shivas"})
+        with patch("act4_harness.load_scenario", return_value=request):
+            result, backend = self.execute()
+        self.assertEqual(result["preferences"], ["mild cheeses", "nonalcoholic pairings"])
+        capsule = self.events(result, "context.model_input")[0]["capsule"]
+        self.assertEqual(capsule["confirmed_request"]["customer_id"], "shivas")
+        self.assertNotIn("pavlos", json.dumps(backend.requests))
+
     def test_customer_context_isolated_and_confirmed_preference_persists(self):
         path = self.root / "shared-memory.sqlite"
-        result, backend = self.execute(customer_id="customer-b", memory_path=path,
+        result, backend = self.execute(customer_id="shivas", memory_path=path,
                                        remember_preferences=["Prefer nonalcoholic pairings today"])
         sent = json.dumps(backend.requests)
-        self.assertNotIn("customer-a", sent)
+        self.assertNotIn("pavlos", sent)
         self.assertNotIn("funky cheeses", sent)
         self.assertIn("Prefer nonalcoholic pairings today", result["preferences"])
         memory = PreferenceMemory(path)
         self.addCleanup(memory.close)
-        self.assertIn("Prefer nonalcoholic pairings today", memory.load("customer-b", "customer-b", self.recorder, self.run_id))
+        self.assertIn("Prefer nonalcoholic pairings today", memory.load("shivas", "shivas", self.recorder, self.run_id))
 
     def test_forced_detector_miss_still_blocks_recipient(self):
         async def run():

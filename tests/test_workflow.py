@@ -49,7 +49,7 @@ class CheckoutTests(RecordingTest):
         with self.assertRaises(PolicyBlocked):
             self.place(request, items + [LineItem(product="unknown", grams=100)])
         with self.assertRaises(PolicyBlocked):
-            self.place(request.model_copy(update={"customer_id": "customer-b"}), items)
+            self.place(request.model_copy(update={"customer_id": "shivas"}), items)
 
     def test_approval_required_and_forged_log_does_not_authorize(self):
         request, items = fixture("manager-approval")

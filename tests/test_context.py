@@ -65,7 +65,7 @@ class ContextTests(RecordingTest):
         customers[1]["preferences"] = ["OTHER_CUSTOMER_PRIVATE_MARKER"]
         packet = build_context(request, Store(), "enriched", customers=customers)
         self.assertNotIn("OTHER_CUSTOMER_PRIVATE_MARKER", json.dumps(packet))
-        self.assertNotIn("customer-b", json.dumps(packet))
+        self.assertNotIn("shivas", json.dumps(packet))
         self.assertIn("Prefer Italian cheese today", json.dumps(packet))
         self.assertIn("take precedence", instructions(Store()))
         with self.assertRaises(ValueError):

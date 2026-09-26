@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from formaggio.config import MODEL, OUTPUT_DIR
+from formaggio.config import MODEL, OUTPUT_DIR, load_json
 from formaggio.evaluation.evaluation import compare, report_experiment, run_suite
 from formaggio.operations.observability import Recorder
 
@@ -40,7 +40,8 @@ def main():
     parser.add_argument("--vendor-document", choices=["clean", "malicious", "benign", "quoted"], default=None)
     parser.add_argument("--demo-compaction", action="store_true", help="Acts 4–5: seed labeled synthetic history to trigger compaction")
     parser.add_argument("--simulate-detector-miss", action="store_true", help="Acts 4–5 fixture only: miss injection, then block the prohibited recipient")
-    parser.add_argument("--customer", choices=["customer-a", "customer-b"], default=None)
+    parser.add_argument("--customer", choices=[c["customer_id"] for c in load_json("customers.json")],
+                        default=None, help="Acts 4–5: customer ID; defaults to the scenario customer")
     parser.add_argument("--remember-preference", action="append", default=[], help="Acts 4–5: explicitly save a customer-confirmed preference")
     parser.add_argument("--memory-db", type=Path, help="Acts 4–5: separate operational preference database")
     args = parser.parse_args()
@@ -178,7 +179,7 @@ def main():
                             print("Please enter approve or decline.")
                     result = asyncio.run(run_lesson(recorder, scenario=args.scenario, model=args.model, fixture=args.fixture,
                         document=args.vendor_document or "clean", demo_compaction=args.demo_compaction,
-                        simulate_detector_miss=args.simulate_detector_miss, customer_id=args.customer or "customer-a",
+                        simulate_detector_miss=args.simulate_detector_miss, customer_id=args.customer,
                         remember_preferences=args.remember_preference, memory_path=args.memory_db,
                         reviewer=email_reviewer, decision_source="test_option" if args.email_decision else "human", progress=print))
                     print_harness_result(result)

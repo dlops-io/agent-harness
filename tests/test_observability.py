@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 from formaggio.operations.observability import Recorder
 from tests.support import RecordingTest
@@ -51,7 +52,7 @@ class ObservabilityTests(RecordingTest):
         target=self.root / "backup.sqlite"
         self.recorder.backup(target)
         self.recorder.event(self.run_id,"later",{})
-        with sqlite3.connect(target) as db:
+        with closing(sqlite3.connect(target)) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM events").fetchone()[0],2)
         with self.assertRaises(ValueError):
             self.recorder.backup(self.recorder.path)

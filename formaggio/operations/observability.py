@@ -2,7 +2,7 @@
 
 Policy events are committed synchronously. Telemetry never grants permission.
 """
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -277,7 +277,7 @@ class Recorder:
         if destination.resolve() == self.path.resolve():
             raise ValueError("Backup must use another path.")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with self.lock, sqlite3.connect(destination) as target:
+        with self.lock, closing(sqlite3.connect(destination)) as target:
             self.db.backup(target)
 
     def close(self):
