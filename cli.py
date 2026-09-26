@@ -131,7 +131,8 @@ def main():
                 if args.simulate_detector_miss:
                     print("TEST: force the detector to miss an attack; the recipient policy must still block it.")
             else:
-                print(f"Context lesson — model: {args.model}. Proposals only; no orders are placed.")
+                print(f"🧀 {'Agent and tools' if args.act == 1 else 'Context engineering'} lesson — model: {args.model}.")
+                print("🛡️ Proposals only; no orders are placed.")
             try:
                 if args.act == 1:
                     result = asyncio.run(run_act1(recorder, scenario=args.scenario, model=args.model, progress=print))
@@ -187,7 +188,7 @@ def main():
                 print("Run stopped: " + recorder.redactor.clean(str(exc)))
                 print(f"Inspect the recorded error with --list-runs and --inspect-run. Database: {args.db}")
                 raise SystemExit(1) from None
-            print(f"Recorded in {args.db}. No evaluation suite was run.")
+            print(f"💾 Recorded in {args.db}. No evaluation suite was run.")
         elif args.foundation:
             prompt = args.prompt_file.read_text(encoding="utf-8") if args.prompt_file else None
             report = run_suite(recorder, args.label, repeats=args.repeats, prompt=prompt)
@@ -240,27 +241,28 @@ def print_evaluation_report(report):
 
 
 def print_agent_result(result):
-    print(f"\n--- {result['mode'].upper()} CONTEXT — run {result['run_id']} ---")
+    print(f"\n🧾 {result['mode'].upper()} CONTEXT — run {result['run_id']}")
     for source in result["context"]["sources"]:
         print(f"Loaded {source['source']}: {source['reason']}")
     excluded = result["context"]["excluded_products"]
     if excluded:
         print("Excluded from initial context: " + ", ".join(p["product_id"] for p in excluded))
-    print("\nAgent's response:\n" + result["reply"].message)
+    print("\n💬 Agent's response:\n" + result["reply"].message)
     report = result["report"]
     if report:
-        print("\nIndependent cart check (no automatic repair):")
+        print("\n🔍 Independent cart check (no automatic repair):")
         print(f"  {report.total_grams} g; cheese subtotal ${report.subtotal_cents / 100:.2f}")
         for item in report.items:
             print(f"  {item.product}: {item.grams} g")
         if report.ok:
-            print("  Cart satisfies the fixture rules.")
+            print("  ✅ Cart satisfies the shop rules.")
         else:
             for violation in report.violations:
-                print(f"  {violation.rule}: {violation.detail}")
+                print(f"  ⚠️ {violation.rule}: {violation.detail}")
         if report.needs_manager_approval:
-            print("  Manager approval would be required in the later ordering workflow.")
-    print(f"Model calls: {result['model_calls']}. No order was placed.\n")
+            print("  👤 Manager approval would be required in the later ordering workflow.")
+    print(f"📊 Model calls: {result['model_calls']}. Tool calls: {result.get('tool_calls', 'not recorded')}.")
+    print("🛡️ No order was placed.\n")
 
 
 def print_cart(report):
@@ -269,7 +271,7 @@ def print_cart(report):
         print(f"  {item.product}: {item.grams} g — ${cents / 100:.2f}")
     print("  Excludes tax, shipping and pairing costs. Fictional shop policies apply.")
     for violation in report.violations:
-        print(f"  {violation.rule}: {violation.detail}")
+        print(f"  ⚠️ {violation.rule}: {violation.detail}")
 
 
 def print_workflow_result(result):

@@ -50,7 +50,8 @@ async def run_act6(recorder, *, scenario="standard", model=MODEL, fixture=False,
     run_id = recorder.start_run(recorder.version(snapshot), case_id=scenario, act=6,
                                 mode=mode, model="fixture-model" if mode == "fixture" else model)
     proposers, owned, api, fixture_api = {}, False, None, None
-    trace = ModelTrace(recorder, run_id, progress, max_calls=16)
+    trace = ModelTrace(recorder, run_id, progress, max_calls=16,
+                       model="fixture-model" if mode == "fixture" else model, label="Customer assistant")
     try:
         with recorder.span(run_id, "harness.composition", "agent"), sdk_tracing(recorder):
             for request_id in requests:

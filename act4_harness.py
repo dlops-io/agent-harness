@@ -168,7 +168,8 @@ async def run_harness(recorder, *, model=MODEL, scenario="event-shortage", fixtu
     memory, api, owned, fixture_api = None, None, False, None
     outreach = VendorOutreach(store, request, brief["items"], recorder, run_id, output_root or OUTPUT_DIR)
     outreach.require_template = skills_enabled
-    model_trace = ModelTrace(recorder, run_id, progress, max_calls=16 if skills_enabled else 8)
+    model_trace = ModelTrace(recorder, run_id, progress, max_calls=16 if skills_enabled else 8,
+                             model="fixture-model" if fixture else model, label="Event planner")
     tool_trace = None
     try:
         with recorder.span(run_id, "harness.event_planning", "agent"), sdk_tracing(recorder):

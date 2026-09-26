@@ -27,7 +27,7 @@ async def run_agent(recorder, *, scenario="standard", mode="basic", model=MODEL,
     run_id = recorder.start_run(version_id, case_id=scenario, act=act, model=model, mode=execution_mode)
     tools = build_tools(store, request, recorder, run_id)
     recorder.event(run_id, "context.mode", {"mode": mode})
-    model_trace = ModelTrace(recorder, run_id, progress)
+    model_trace = ModelTrace(recorder, run_id, progress, model=model, label="Shop assistant")
     tool_trace = ToolTrace(recorder, run_id, [t.name for t in tools], progress)
     api = None
     owned = False
@@ -37,8 +37,14 @@ async def run_agent(recorder, *, scenario="standard", mode="basic", model=MODEL,
                       context_providers=[ShopContextProvider(packet, recorder, run_id)],
                       default_options={**MODEL_OPTIONS, "response_format": AgentReply})
         with recorder.span(run_id, "agent.context_demo", "agent"), sdk_tracing(recorder):
+            message = customer_message(request)
+            if progress:
+                progress(f"\n🧪 Act {act} · {mode.upper()} context · scenario: {scenario}")
+                progress("👤 Customer question (actual message sent to the model):\n"
+                         + recorder.redactor.clean(message))
+                progress(f"\n🔎 Run: {run_id}. Tool arguments/results below; full model inputs: --inspect-run {run_id}")
             async with asyncio.timeout(120):
-                response = await agent.run(customer_message(request), session=agent.create_session())
+                response = await agent.run(message, session=agent.create_session())
             reply = response.value
             if not isinstance(reply, AgentReply):
                 reply = AgentReply.model_validate_json(response.text)
@@ -49,7 +55,7 @@ async def run_agent(recorder, *, scenario="standard", mode="basic", model=MODEL,
                 "cart_report": report.model_dump() if report else None})
         recorder.finish_run(run_id)
         return {"run_id": run_id, "mode": mode, "reply": reply, "report": report,
-                "context": packet, "model_calls": model_trace.calls}
+                "context": packet, "model_calls": model_trace.calls, "tool_calls": tool_trace.invocations}
     except (TimeoutError, asyncio.CancelledError):
         recorder.finish_run(run_id, "stopped", "Run timed out or was cancelled.")
         raise

@@ -169,7 +169,7 @@ class AgentProposer:
     def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None):
         self.recorder, self.run_id, self.prompt, self.model = recorder, run_id, prompt, model
         self.api_client, self.api, self.owned, self.client = api_client, None, False, None
-        self.trace = ModelTrace(recorder, run_id, progress)
+        self.trace = ModelTrace(recorder, run_id, progress, model=model, label="Cart proposer")
 
     async def __call__(self, state, packet):
         if self.client is None:

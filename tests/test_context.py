@@ -79,13 +79,13 @@ class ContextTests(RecordingTest):
         self.assertTrue(catalog["selection_is_not_final_validation"])
         self.assertIn("walnut_chevre", {p["product_id"] for p in catalog["candidates"]})
 
-    def run_scripted(self, mode, backend=None):
+    def run_scripted(self, mode, backend=None, *, progress=None):
         backend = backend or ScriptedResponses()
         async def execute():
             async with AsyncOpenAI(api_key="unit-test-credential", base_url="https://fixture.invalid/v1",
                                    max_retries=0, http_client=httpx.AsyncClient(transport=httpx.MockTransport(backend))) as api:
                 return await run_agent(self.recorder, mode=mode, model="fixture-model", api_client=api,
-                                       execution_mode="fixture", act=2)
+                                       execution_mode="fixture", act=2, progress=progress)
         return asyncio.run(execute()), backend
 
     def test_real_sdk_calls_trace_tools_and_each_model_input(self):
@@ -109,6 +109,31 @@ class ContextTests(RecordingTest):
         self.assertNotIn("unit-test-credential", json.dumps(events) + json.dumps(spans))
         self.assertFalse(any(e["event_type"] == "order.placed" for e in events))
         self.assertEqual(self.recorder.query("SELECT count(*) AS n FROM evaluations")[0]["n"], 0)
+
+    def test_progress_explains_real_calls_without_changing_the_agent_input(self):
+        from cli import print_agent_result
+        from formaggio.agents.context import customer_message, load_scenario
+        lines = []
+        result, backend = self.run_scripted("basic", progress=lines.append)
+        output = "\n".join(lines)
+        question = customer_message(load_scenario("standard"))
+        self.assertIn(question, output)
+        self.assertIn(question, json.dumps(backend.requests[0], ensure_ascii=False).replace('\\n', '\n').replace('\\"', '"'))
+        self.assertIn("🤖 Model call 1 · Shop assistant · fixture-model", output)
+        self.assertIn("🔧 Tool call 1: get_catalog", output)
+        self.assertIn("🔧 Tool call 2: preview_order", output)
+        self.assertIn('"grams": 300', output)
+        self.assertIn("Latest tool results in context: get_catalog", output)
+        self.assertIn("100 input tokens", output)
+        self.assertIn("preview truncated", output)
+        self.assertNotIn("unit-test-credential", output)
+        self.assertEqual((result["model_calls"], result["tool_calls"]), (3, 2))
+        final = io.StringIO()
+        with redirect_stdout(final):
+            print_agent_result(result)
+        self.assertIn("✅ Cart satisfies the shop rules.", final.getvalue())
+        self.assertIn("Tool calls: 2", final.getvalue())
+        self.assertIn("No order was placed", final.getvalue())
 
     def test_only_context_changes_between_modes(self):
         basic, a = self.run_scripted("basic")
