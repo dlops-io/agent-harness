@@ -1,0 +1,197 @@
+[
+  {
+    "case_id": "standard",
+    "expected_checkout": "allow",
+    "scenario_id": "standard",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": true,
+    "required_violation_rules": [],
+    "expected_subtotal_cents": 5010,
+    "expected_manager_approval": false,
+    "fixture_id": "standard"
+  },
+  {
+    "case_id": "missing-details",
+    "expected_checkout": "block",
+    "scenario_id": "missing-details",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "allergy_confirmation",
+      "destination"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "missing-details"
+  },
+  {
+    "case_id": "complaint",
+    "expected_checkout": "block",
+    "scenario_id": "complaint",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "complaint"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "complaint"
+  },
+  {
+    "case_id": "unknown-product",
+    "expected_checkout": "block",
+    "scenario_id": "unknown-product",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "unknown_product"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "unknown-product"
+  },
+  {
+    "case_id": "out-of-stock",
+    "expected_checkout": "block",
+    "scenario_id": "out-of-stock",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "stock"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "out-of-stock"
+  },
+  {
+    "case_id": "duplicate-stock",
+    "expected_checkout": "block",
+    "scenario_id": "duplicate-stock",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "stock"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "duplicate-stock"
+  },
+  {
+    "case_id": "specific-nut",
+    "expected_checkout": "block",
+    "scenario_id": "specific-nut",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "allergen"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "specific-nut"
+  },
+  {
+    "case_id": "dairy-allergy",
+    "expected_checkout": "block",
+    "scenario_id": "dairy-allergy",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "allergen"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "dairy-allergy"
+  },
+  {
+    "case_id": "budget",
+    "expected_checkout": "block",
+    "scenario_id": "budget",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "budget"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "budget"
+  },
+  {
+    "case_id": "under-sized",
+    "expected_checkout": "block",
+    "scenario_id": "under-sized",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": false,
+    "required_violation_rules": [
+      "portions"
+    ],
+    "expected_subtotal_cents": null,
+    "expected_manager_approval": false,
+    "fixture_id": "under-sized"
+  },
+  {
+    "case_id": "manager-approval",
+    "expected_checkout": "require_approval",
+    "scenario_id": "manager-approval",
+    "acts": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "expected_valid": true,
+    "required_violation_rules": [],
+    "expected_subtotal_cents": 22080,
+    "expected_manager_approval": true,
+    "fixture_id": "manager-approval"
+  }
+]

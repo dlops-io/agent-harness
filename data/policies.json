@@ -1,0 +1,140 @@
+{
+  "version": "1",
+  "description": "Fictional classroom shop policies; cheese subtotal excludes tax, shipping, and pairing costs.",
+  "raw_milk_blocked_states": [
+    "PA",
+    "NJ",
+    "MD",
+    "NC"
+  ],
+  "recognized_states": [
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MD",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY",
+    "DC"
+  ],
+  "manager_threshold_cents": 20000,
+  "min_product_grams": 100,
+  "quantity_increment_g": 50,
+  "min_grams_per_guest": 80,
+  "max_grams_per_guest": 100,
+  "min_products": 3,
+  "max_products": 5,
+  "max_revisions": 2,
+  "known_allergens": [
+    "milk",
+    "tree_nuts",
+    "walnut",
+    "pistachio",
+    "almond",
+    "peanut",
+    "wheat",
+    "sulfites"
+  ],
+  "allergen_aliases": {
+    "milk": [
+      "milk"
+    ],
+    "dairy": [
+      "milk"
+    ],
+    "nuts": [
+      "tree_nuts",
+      "peanut"
+    ],
+    "nut": [
+      "tree_nuts",
+      "peanut"
+    ],
+    "nut allergy": [
+      "tree_nuts",
+      "peanut"
+    ],
+    "tree nuts": [
+      "tree_nuts"
+    ],
+    "tree_nuts": [
+      "tree_nuts"
+    ],
+    "walnut": [
+      "walnut"
+    ],
+    "walnuts": [
+      "walnut"
+    ],
+    "pistachio": [
+      "pistachio"
+    ],
+    "pistachios": [
+      "pistachio"
+    ],
+    "almond": [
+      "almond"
+    ],
+    "almonds": [
+      "almond"
+    ],
+    "peanut": [
+      "peanut"
+    ],
+    "peanuts": [
+      "peanut"
+    ],
+    "wheat": [
+      "wheat"
+    ],
+    "sulfites": [
+      "sulfites"
+    ]
+  },
+  "allowed_vendor_recipients": [
+    "vendor@example.com"
+  ]
+}

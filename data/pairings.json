@@ -1,0 +1,122 @@
+[
+  {
+    "pairing_id": "walnut_bread",
+    "name": "Walnut bread",
+    "styles": [
+      "alpine",
+      "hard"
+    ],
+    "kind": "food",
+    "ingredients": [
+      "wheat",
+      "walnut"
+    ],
+    "allergens": [
+      "wheat",
+      "tree_nuts",
+      "walnut"
+    ]
+  },
+  {
+    "pairing_id": "almonds",
+    "name": "Marcona almonds",
+    "styles": [
+      "hard"
+    ],
+    "kind": "food",
+    "ingredients": [
+      "almond"
+    ],
+    "allergens": [
+      "tree_nuts",
+      "almond"
+    ]
+  },
+  {
+    "pairing_id": "apple",
+    "name": "Apple slices",
+    "styles": [
+      "soft-ripened",
+      "alpine",
+      "washed-rind",
+      "fresh-aged",
+      "hard",
+      "fresh",
+      "brined"
+    ],
+    "kind": "food",
+    "ingredients": [
+      "apple"
+    ],
+    "allergens": []
+  },
+  {
+    "pairing_id": "cornichons",
+    "name": "Cornichons",
+    "styles": [
+      "washed-rind",
+      "brined"
+    ],
+    "kind": "food",
+    "ingredients": [
+      "cucumber",
+      "vinegar"
+    ],
+    "allergens": []
+  },
+  {
+    "pairing_id": "crackers",
+    "name": "Wheat crackers",
+    "styles": [
+      "soft-ripened",
+      "alpine",
+      "washed-rind",
+      "fresh-aged",
+      "hard",
+      "fresh",
+      "brined"
+    ],
+    "kind": "food",
+    "ingredients": [
+      "wheat"
+    ],
+    "allergens": [
+      "wheat"
+    ]
+  },
+  {
+    "pairing_id": "riesling",
+    "name": "Dry Riesling",
+    "styles": [
+      "alpine",
+      "washed-rind",
+      "hard"
+    ],
+    "kind": "drink",
+    "ingredients": [
+      "grapes",
+      "sulfites"
+    ],
+    "allergens": [
+      "sulfites"
+    ]
+  },
+  {
+    "pairing_id": "sparkling_water",
+    "name": "Sparkling water",
+    "styles": [
+      "soft-ripened",
+      "alpine",
+      "washed-rind",
+      "fresh-aged",
+      "hard",
+      "fresh",
+      "brined"
+    ],
+    "kind": "drink",
+    "ingredients": [
+      "water"
+    ],
+    "allergens": []
+  }
+]

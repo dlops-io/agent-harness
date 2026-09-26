@@ -1,0 +1,188 @@
+[
+  {
+    "product_id": "brie",
+    "name": "Brie de Meaux",
+    "aliases": [],
+    "country": "France",
+    "milk": "cow",
+    "raw_milk": true,
+    "style": "soft-ripened",
+    "funk": 2,
+    "cents_per_100g": 520,
+    "stock_g": 2400,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "comte",
+    "name": "Comté 18 mois",
+    "aliases": [
+      "Comte"
+    ],
+    "country": "France",
+    "milk": "cow",
+    "raw_milk": true,
+    "style": "alpine",
+    "funk": 1,
+    "cents_per_100g": 450,
+    "stock_g": 6000,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "epoisses",
+    "name": "Époisses",
+    "aliases": [],
+    "country": "France",
+    "milk": "cow",
+    "raw_milk": false,
+    "style": "washed-rind",
+    "funk": 5,
+    "cents_per_100g": 690,
+    "stock_g": 900,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "bucheron",
+    "name": "Bûcheron",
+    "aliases": [],
+    "country": "France",
+    "milk": "goat",
+    "raw_milk": false,
+    "style": "fresh-aged",
+    "funk": 1,
+    "cents_per_100g": 410,
+    "stock_g": 2000,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "mimolette",
+    "name": "Mimolette Extra-Vieille",
+    "aliases": [],
+    "country": "France",
+    "milk": "cow",
+    "raw_milk": false,
+    "style": "hard",
+    "funk": 2,
+    "cents_per_100g": 500,
+    "stock_g": 3000,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "munster",
+    "name": "Munster",
+    "aliases": [],
+    "country": "France",
+    "milk": "cow",
+    "raw_milk": false,
+    "style": "washed-rind",
+    "funk": 5,
+    "cents_per_100g": 470,
+    "stock_g": 0,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "taleggio",
+    "name": "Taleggio",
+    "aliases": [],
+    "country": "Italy",
+    "milk": "cow",
+    "raw_milk": false,
+    "style": "washed-rind",
+    "funk": 4,
+    "cents_per_100g": 430,
+    "stock_g": 3000,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "manchego",
+    "name": "Manchego 12 meses",
+    "aliases": [],
+    "country": "Spain",
+    "milk": "sheep",
+    "raw_milk": false,
+    "style": "hard",
+    "funk": 1,
+    "cents_per_100g": 390,
+    "stock_g": 4000,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "gouda",
+    "name": "Aged Gouda",
+    "aliases": [],
+    "country": "Netherlands",
+    "milk": "cow",
+    "raw_milk": false,
+    "style": "hard",
+    "funk": 1,
+    "cents_per_100g": 370,
+    "stock_g": 4500,
+    "allergens": [
+      "milk"
+    ]
+  },
+  {
+    "product_id": "walnut_chevre",
+    "name": "Walnut-Crusted Chèvre",
+    "aliases": [],
+    "country": "USA",
+    "milk": "goat",
+    "raw_milk": false,
+    "style": "fresh",
+    "funk": 1,
+    "cents_per_100g": 360,
+    "stock_g": 900,
+    "allergens": [
+      "milk",
+      "tree_nuts",
+      "walnut"
+    ]
+  },
+  {
+    "product_id": "pistachio_manchego",
+    "name": "Pistachio Manchego",
+    "aliases": [],
+    "country": "Spain",
+    "milk": "sheep",
+    "raw_milk": false,
+    "style": "hard",
+    "funk": 1,
+    "cents_per_100g": 480,
+    "stock_g": 650,
+    "allergens": [
+      "milk",
+      "tree_nuts",
+      "pistachio"
+    ]
+  },
+  {
+    "product_id": "halloumi",
+    "name": "Halloumi",
+    "aliases": [],
+    "country": "Cyprus",
+    "milk": "goat",
+    "raw_milk": false,
+    "style": "brined",
+    "funk": 0,
+    "cents_per_100g": 290,
+    "stock_g": 2000,
+    "allergens": [
+      "milk"
+    ]
+  }
+]

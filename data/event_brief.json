@@ -1,0 +1,10 @@
+{
+  "scenario": "event-shortage",
+  "task": "Prepare a sourcing plan for our 40-person corporate tasting in NY. The customer requested this exact menu. Verify its quantities, cost and constraints, read the vendor note, and prepare an availability inquiry for any shortfall. Keep a visible task list. Save the mock email only after human approval. Do not place an order or claim that the vendor has confirmed availability.",
+  "items": [
+    {"product": "comte", "grams": 1000},
+    {"product": "mimolette", "grams": 1000},
+    {"product": "epoisses", "grams": 1200}
+  ],
+  "vendor_recipient": "vendor@example.com"
+}

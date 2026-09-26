@@ -1,0 +1,18 @@
+{
+  "standard": [[{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]],
+  "unknown-product": [
+    [{"product": "moon_cheese", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}],
+    [{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]
+  ],
+  "out-of-stock": [
+    [{"product": "munster", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}],
+    [{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]
+  ],
+  "under-sized": [[{"product": "epoisses", "grams": 100}, {"product": "bucheron", "grams": 100}, {"product": "taleggio", "grams": 100}]],
+  "budget": [[{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]],
+  "dairy-allergy": [[]],
+  "missing-details": [[]],
+  "complaint": [[]],
+  "manager-approval": [[{"product": "comte", "grams": 1600}, {"product": "mimolette", "grams": 1600}, {"product": "taleggio", "grams": 1600}]],
+  "manager-decline": [[{"product": "comte", "grams": 1600}, {"product": "mimolette", "grams": 1600}, {"product": "taleggio", "grams": 1600}]]
+}

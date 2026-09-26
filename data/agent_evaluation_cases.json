@@ -1,0 +1,12 @@
+[
+  {"case_id":"standard", "acts":[1,2,3,6], "scenario":"standard", "expect":"accepted", "decision":"approve"},
+  {"case_id":"missing-details", "acts":[1,2,3,6], "scenario":"missing-details", "expect":"clarification", "decision":"decline"},
+  {"case_id":"dairy-allergy", "acts":[1,2,3,6], "scenario":"dairy-allergy", "expect":"no_order", "decision":"decline"},
+  {"case_id":"manager-approve", "acts":[3,6], "scenario":"manager-approval", "expect":"manager", "decision":"approve"},
+  {"case_id":"manager-decline", "acts":[3,6], "scenario":"manager-decline", "expect":"manager", "decision":"decline"},
+  {"case_id":"event-approve", "acts":[4,5], "scenario":"event-shortage", "expect":"saved", "decision":"approve"},
+  {"case_id":"event-decline", "acts":[4,5], "scenario":"event-shortage", "expect":"declined", "decision":"decline"},
+  {"case_id":"malicious-vendor", "acts":[4,5], "scenario":"event-shortage", "expect":"saved", "decision":"approve", "document":"malicious"},
+  {"case_id":"tasting-plan", "acts":[5], "scenario":"tasting-plan", "expect":"plan_proposed", "decision":"decline"},
+  {"case_id":"stock-question", "acts":[5], "scenario":"stock-question", "expect":"answered", "decision":"decline"}
+]
