@@ -12,31 +12,16 @@ from formaggio.agents.execution import ExecutionState, ModelControl, RecordedExe
 from formaggio.agents.harness_state import ApplicationContext, HarnessHistory, PreferenceMemory
 from formaggio.agents.planner_layers import Compaction, Memory, PlannerBudget, PlannerTrace, Planning
 from formaggio.agents.planner_review import run_with_review
+from formaggio.agents.prompt_template import render_prompt
 from formaggio.agents.skill_layer import Skills
 from formaggio.agents.skill_support import SKILL_TOOLS
 from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES, build_event_tools, build_stock_tool
-from formaggio.agents.runtime import ModelTrace, console_progress, make_client, run_snapshot
+from formaggio.agents.runtime import CONTEXT_WINDOW_TOKENS, MAX_OUTPUT_TOKENS, ModelTrace, console_progress, make_client, run_snapshot
+from formaggio.agents.tasting_delivery import DELIVERY_INSTRUCTIONS, deliver_tasting_reply, tasting_reply_schema
 from formaggio.config import MODEL, OUTPUT_DIR, ROOT, load_json
 from formaggio.operations.governance import PolicyBlocked, PolicyCheckError
 from formaggio.shop.store import Store
 from formaggio.shop.vendor_outreach import VendorOutreach, detect_injection
-
-
-def planner_prompt(prompt, planning):
-    """Keep the default lesson prompt unchanged; omit task-tool directions when disabled."""
-    if planning:
-        return prompt
-    for text in (
-        " using a visible task list",
-        "Maintain a short task list for multi-step work. ",
-        "For a sourcing task that requests a saved mock email, include a separate task to\nresolve the HTML review. ",
-        "Keep the\nreview task open until the host approves or declines; a declined action is a\nresolved review, not a saved email. ",
-        "Use todos_add and todos_complete to track work. Task completion is advisory\nprogress; it never authorizes a protected action.",
-        "Include a review task in your initial task list and keep it open until the\nhost approves or declines. A declined review is complete, but no file was saved.",
-        "Use one initial todos_add call. Batch task completion into one todos_complete\ncall after the review is resolved, rather than updating each task separately.\n",
-    ):
-        prompt = prompt.replace(text, "")
-    return prompt + "\nThe task-list feature is disabled for this run. Use the available event tools directly."
 
 
 @dataclass(frozen=True)
@@ -107,24 +92,28 @@ class PlannerHarness:
         progress = console_progress(progress)
         prompt_file = "prompts/skills_planner.md" if self.act == 5 else "prompts/event_planner.md"
         prompt = (ROOT / prompt_file).read_text(encoding="utf-8") if self.prompt is None else self.prompt
+        prompt = render_prompt(prompt, features)
+        if "planning" not in features:
+            prompt += "\nThe task-list feature is disabled for this run. Use the available event tools directly."
         if self.act == 5 and "skills" not in features:
-            prompt = prompt.replace("You are the Formaggio event assistant. Select skills from their advertised\nmetadata when relevant. Load the selected skill's instructions, then read the\nresources needed for the current task. Do not load every skill automatically.",
-                                    "You are the Formaggio event assistant. Skill discovery and loading are disabled; use the available tools directly.")
-            prompt += "\nA sourcing draft still requires the approved email template. If it is unavailable, report that limitation."
-        prompt = planner_prompt(prompt, "planning" in features)
+            prompt += "\nSkill discovery is disabled. A sourcing draft still requires the approved email template; report that limitation if unavailable."
+        needs_plan = self.act == 5 and self.scenario == "tasting-plan"
+        reply_schema = tasting_reply_schema(store) if needs_plan else None
+        if needs_plan:
+            prompt += DELIVERY_INSTRUCTIONS
         prompt += "\nAuthoritative classroom shop policy:\n" + store.policy.model_dump_json()
         state = ExecutionState()
         if "budget" in features:
             features["budget"].configure(state)
         model = "fixture-model" if self.fixture else self.model
         snapshot = run_snapshot(self.model, "harness", prompt, request, brief, [])
-        snapshot.update(reply_schema=None, document=self.document, demo_compaction=self.demo_compaction,
+        snapshot.update(reply_schema=reply_schema.model_json_schema() if reply_schema else None, document=self.document, demo_compaction=self.demo_compaction,
             simulate_detector_miss=self.simulate_detector_miss, decision_source=self.decision_source,
             layers=[layer.configuration() for layer in self.layers], function_limits=dict(state.limits),
             max_model_calls=state.max_model_calls, max_tool_calls=state.max_tool_calls,
             harness={"todo": "planning" in features, "memory": "memory" in features,
                 "compaction_strategy": "ContextWindowCompactionStrategy" if "compaction" in features else None,
-                "context_tokens": 16000, "output_tokens": 2400,
+                "context_tokens": CONTEXT_WINDOW_TOKENS, "output_tokens": MAX_OUTPUT_TOKENS,
                 "max_active_seconds": features["budget"].seconds if "budget" in features else None,
                 "max_approval_requests": 2, "max_message_characters": 64000, "web_shell_arbitrary_file_access": False})
         if self.act == 5:
@@ -165,8 +154,8 @@ class PlannerHarness:
                             "email_decisions": dict(outreach.decisions),
                             "artifacts": {key: str(path) for key, path in outreach.artifacts.items()},
                             "open_work": "Vendor availability remains unconfirmed; no order has been placed."}
-                    native = (ContextWindowCompactionStrategy(max_context_window_tokens=16000,
-                              max_output_tokens=2400, keep_last_tool_call_groups=1) if "compaction" in features else None)
+                    native = (ContextWindowCompactionStrategy(max_context_window_tokens=CONTEXT_WINDOW_TOKENS,
+                              max_output_tokens=MAX_OUTPUT_TOKENS, keep_last_tool_call_groups=1) if "compaction" in features else None)
                     context = ApplicationContext(recorder, run_id, capsule, progress=progress, native=native,
                                                  details="trace" in features)
                     document, detector = self.document, detect_injection
@@ -187,7 +176,7 @@ class PlannerHarness:
                         progress if "trace" in features else None, details="trace" in features, execution_state=state)
                     middleware = [ModelControl(state)]
                     if "trace" in features:
-                        middleware.append(ModelTrace(recorder, run_id, progress, max_calls=None,
+                        middleware.append(ModelTrace(recorder, run_id, progress,
                                                       model=model, label=features["trace"].label))
                     middleware.append(tool_trace)
                     if skill_access is not None:
@@ -204,7 +193,7 @@ class PlannerHarness:
                         api = execution.own(fixture.client())
                     else:
                         api = api_client if api_client is not None else execution.own(AsyncOpenAI(timeout=45, max_retries=0))
-                    client, _, _ = make_client(model, middleware, api, function_limits=state.limits)
+                    client = make_client(model, middleware, api, function_limits=state.limits)
                     history = HarnessHistory()
                     skill_options = {"skills_provider": skill_provider} if self.act == 5 else {}
                     agent = self.agent_factory(client, tools, prompt, history=history, context=context,
@@ -218,14 +207,20 @@ class PlannerHarness:
                         await history.save_messages(session.session_id, old, state=session.state.setdefault(history.source_id, {}))
                         recorder.event(run_id, "compaction.history_seeded", {"synthetic": True, "messages": len(old)})
                     text = await run_with_review(agent, session, brief["task"], outreach, reviewer, recorder, run_id,
-                                                 decision_source=self.decision_source, active_budget=state.active_budget)
+                                                 decision_source=self.decision_source, active_budget=state.active_budget,
+                                                 reply_schema=reply_schema)
+                    assessment = outreach.assess() if self.scenario != "stock-question" else None
+                    delivered = False
+                    if needs_plan:
+                        menus = {"event": (request, assessment, "Proposal only; no order placed")} if assessment["valid_for_sourcing"] else {}
+                        text, delivered = deliver_tasting_reply(text, menus, store, recorder, run_id)
                     status = "saved" if outreach.artifacts else "blocked" if tool_trace.blocked_reason else "declined" if "decline" in outreach.decisions.values() else "draft_only" if outreach.drafts else "needs_followup"
                     if not tool_trace.blocked_reason and self.scenario in {"stock-question", "tasting-plan"}:
-                        status = ("answered" if stock else "needs_followup") if self.scenario == "stock-question" else "plan_proposed"
+                        status = ("answered" if stock else "needs_followup") if self.scenario == "stock-question" else "plan_proposed" if delivered and menus else "needs_followup"
                     result = {"run_id": run_id, "status": status, "agent_text": text, "tasks": await task_state(),
                         "model_calls": state.model_calls, "scripted": self.fixture or self.execution_mode == "fixture",
                         "compactions": context.count, "preferences": preferences, "reason": tool_trace.blocked_reason,
-                        "assessment": outreach.assess() if self.scenario != "stock-question" else None, "stock": stock, "artifacts": [str(p) for p in outreach.artifacts.values()],
+                        "assessment": assessment, "stock": stock, "artifacts": [str(p) for p in outreach.artifacts.values()],
                         "order_placed": False, "email_transmitted": False}
                     if self.act == 5:
                         result.update(skills_loaded=skill_access.loaded if skill_access else [],

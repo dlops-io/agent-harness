@@ -50,6 +50,21 @@ class PlannerLayerTests(RecordingTest):
             self.assertFalse(api.is_closed())
         return result, backend
 
+    def test_reaffirmed_preference_is_latest_in_the_next_invocation(self):
+        async def check():
+            path = self.root / "shared-memory.sqlite"
+            memory = PreferenceMemory(path)
+            try:
+                for value in ("Prefer nonalcoholic pairings", "Prefer wine pairings", "Prefer nonalcoholic pairings"):
+                    memory.remember("pavlos", "pavlos", [value], self.recorder, self.run_id)
+            finally:
+                memory.close()
+            result, _ = await self.execute(self.configured(customer_id="pavlos", memory_path=path))
+            saved = self.events(result, "context.model_input")[-1]["capsule"]["saved_preferences"]
+            self.assertEqual(saved[-2:], ["Prefer wine pairings", "Prefer nonalcoholic pairings"])
+            self.assertEqual(saved.count("Prefer nonalcoholic pairings"), 1)
+        asyncio.run(check())
+
     def test_complete_request_sequences_match_pre_migration_goldens(self):
         # Captured from the original Act 4, including all calls before/after review.
         cases = [

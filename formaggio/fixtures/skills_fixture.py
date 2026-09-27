@@ -13,6 +13,8 @@ class SkillsFixture(HarnessFixture):
             return [("load_skill", {"skill_name": name}),
                     ("read_skill_resource", {"skill_name": name, "resource_name": "references/serving-guide.md" if name == "tasting-planning" else "references/vendor-guide.md"}),
                     ("read_skill_resource", {"skill_name": name, "resource_name": "assets/tasting-plan.md" if name == "tasting-planning" else "assets/email-template.html"})]
+        self.assessments = {}
+        self.final_reply = None
         self.calls = calls if calls is not None else (
             [("get_stock", {"product": "epoisses"})] if scenario == "stock-question" else
             skill("tasting-planning") + [("todos_add", {"todos": [{"title": "Prepare the requested plan"}]}), ("assess_event", {})]
@@ -25,9 +27,32 @@ class SkillsFixture(HarnessFixture):
                           if (planning or not name.startswith("todos_"))
                           and (skills or name not in {"load_skill", "read_skill_resource"})]
 
+    def final_text(self, payload):
+        if self.final_reply is not None:
+            return self.final_reply if isinstance(self.final_reply, str) else json.dumps(self.final_reply)
+        message = "Scripted skill demonstration finished; consult the authoritative tool results."
+        if payload.get("text", {}).get("format", {}).get("name") != "TastingReply":
+            return message
+        plans = [{"request_id": key, "courses": [
+            {"product": item["product"], "reason": "Serve this course before moving to the next cheese.",
+             "pairing_ids": [p["pairing_id"] for p in value["conditional_pairings"].get(item["product"], [])[:1]]}
+            for item in value["report"]["items"]],
+            "serving_notes": "Serve individual portions with separate utensils.",
+            "open_questions": ["Confirm serving time."]} for key, value in self.assessments.items()
+            if value.get("valid_for_sourcing", True)]
+        return json.dumps({"message": message, "plans": plans})
+
     def __call__(self, request):
         payload = json.loads(request.content)
         self.requests.append(payload)
+        for item in payload.get("input", []):
+            if item.get("type") == "function_call_output":
+                try:
+                    value = json.loads(item.get("output", "{}"))
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(value, dict) and "report" in value and "conditional_pairings" in value:
+                    self.assessments[value.get("request_id", "event")] = value
         index = len(self.requests) - 1
         if index < len(self.calls):
             name, args = self.calls[index]
@@ -52,7 +77,7 @@ class SkillsFixture(HarnessFixture):
             output = []
         if not output:
             output = [{"type": "message", "id": "msg_fixture", "role": "assistant", "status": "completed",
-                "content": [{"type": "output_text", "text": "Scripted skill demonstration finished; consult the authoritative tool results.", "annotations": []}]}]
+                "content": [{"type": "output_text", "text": self.final_text(payload), "annotations": []}]}]
         return httpx.Response(200, json={"id": f"resp_{index}", "object": "response", "created_at": 1,
             "model": "fixture-model", "status": "completed", "output": output,
             "usage": {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120,

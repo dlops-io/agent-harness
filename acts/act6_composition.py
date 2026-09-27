@@ -6,7 +6,7 @@ from formaggio.agents.composition_runtime import CompositionHarness
 from formaggio.agents.context import load_scenario
 from formaggio.agents.harness_state import no_post_turn_compaction
 from formaggio.agents.planner_layers import Compaction, Planning
-from formaggio.agents.runtime import MODEL_OPTIONS
+from formaggio.agents.runtime import CONTEXT_WINDOW_TOKENS, MAX_OUTPUT_TOKENS, MODEL_OPTIONS
 from formaggio.agents.skill_layer import Skills
 from formaggio.agents.skill_support import SKILLS_ROOT
 from formaggio.config import MODEL
@@ -46,7 +46,7 @@ def build_assistant(client, tools, prompt, *, history, context, todo_provider=No
                               "Use the available tools. Respect host-owned workflow decisions."),
         agent_instructions=prompt, tools=tools, todo_provider=todo_provider, disable_todo=todo_provider is None,
         skills_provider=skills_provider, history_provider=history,
-        max_context_window_tokens=16000, max_output_tokens=2400,
+        max_context_window_tokens=CONTEXT_WINDOW_TOKENS, max_output_tokens=MAX_OUTPUT_TOKENS,
         before_compaction_strategy=context, after_compaction_strategy=no_post_turn_compaction,
         disable_mode=True, disable_file_memory=True, disable_web_search=True, default_options=MODEL_OPTIONS)
 

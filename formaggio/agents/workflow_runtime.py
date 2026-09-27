@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 
 from formaggio.agents.context import ShopContextProvider, build_context, customer_message, load_scenario
 from formaggio.agents.execution import ExecutionState, ModelControl, RecordedExecution
-from formaggio.agents.runtime import MODEL_OPTIONS, ModelTrace, console_progress, make_client, run_snapshot
+from formaggio.agents.runtime import MODEL_OPTIONS, console_progress, make_client, run_snapshot
 from formaggio.agents.workflow_layers import WorkflowBudget, WorkflowTrace
 from formaggio.config import MODEL, ROOT, load_json
 from formaggio.shop.checkout import Checkout
@@ -24,20 +24,19 @@ class AgentProposer:
     Act adapters supply invocation-local controls and measure active time at
     their execution boundary. A caller may also cap each proposal individually.
     """
-    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state=None, proposal_timeout=None):
+    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state, proposal_timeout=None):
         self.recorder, self.run_id, self.prompt, self.model = recorder, run_id, prompt, model
         self.api_client, self.api, self.owned, self.client = api_client, None, False, None
         self.execution_state = execution_state
-        self.proposal_timeout = 120 if execution_state is None else proposal_timeout
-        self.trace = ModelTrace(recorder, run_id, progress, model=model, label="Cart proposer")
+        self.proposal_timeout = proposal_timeout
 
     async def __call__(self, state, packet):
         if self.client is None:
             self.owned = self.api_client is None
             self.api = AsyncOpenAI(timeout=45, max_retries=0) if self.owned else self.api_client
-            middleware = self.execution_state.middleware if self.execution_state is not None else [self.trace]
-            limits = self.execution_state.limits if self.execution_state is not None else None
-            self.client, _, _ = make_client(self.model, middleware, self.api, function_limits=limits)
+            middleware = self.execution_state.middleware
+            limits = self.execution_state.limits
+            self.client = make_client(self.model, middleware, self.api, function_limits=limits)
         agent = Agent(client=self.client, name="CartProposer", instructions=self.prompt,
             context_providers=[ShopContextProvider(packet, self.recorder, self.run_id)],
             default_options={**MODEL_OPTIONS, "response_format": CartProposal})

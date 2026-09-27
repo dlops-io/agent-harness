@@ -5,10 +5,7 @@ from formaggio.agents.context import load_scenario
 from formaggio.agents.harness_state import no_post_turn_compaction
 from formaggio.agents.planner_layers import Compaction, Memory, PlannerBudget, PlannerTrace, Planning
 from formaggio.agents.planner_runtime import PlannerHarness
-# Compatibility imports for existing callers.
-from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES, build_event_tools
-from formaggio.agents.planner_review import run_with_review
-from formaggio.agents.runtime import MODEL_OPTIONS
+from formaggio.agents.runtime import CONTEXT_WINDOW_TOKENS, MAX_OUTPUT_TOKENS, MODEL_OPTIONS
 from formaggio.config import MODEL
 
 
@@ -21,7 +18,7 @@ def build_planner(client, tools, prompt, *, history, context, todo_provider=None
                               "Use the supplied tools. Host policies and external approvals govern actions."),
         agent_instructions=prompt, tools=tools, history_provider=history,
         todo_provider=todo_provider, disable_todo=todo_provider is None, skills_provider=skills_provider,
-        max_context_window_tokens=16000, max_output_tokens=2400,
+        max_context_window_tokens=CONTEXT_WINDOW_TOKENS, max_output_tokens=MAX_OUTPUT_TOKENS,
         before_compaction_strategy=context, after_compaction_strategy=no_post_turn_compaction,
         disable_mode=True, disable_file_memory=True, disable_web_search=True,
         default_options=MODEL_OPTIONS,
@@ -50,10 +47,3 @@ def build_act4(*, model=MODEL, scenario="event-shortage", fixture=False, documen
 # Stable CLI/evaluator API; notebooks call build_act4(...).run(...) explicitly.
 async def run_act4(recorder, *, reviewer=None, progress=None, api_client=None, **kwargs):
     return await build_act4(**kwargs).run(recorder, reviewer=reviewer, progress=progress, api_client=api_client)
-
-
-async def run_harness(recorder, *, skills_files=None, **kwargs):
-    if skills_files is not None:
-        from acts.act5_skills import run_act5
-        return await run_act5(recorder, skills_root=skills_files.root, **kwargs)
-    return await run_act4(recorder, **kwargs)

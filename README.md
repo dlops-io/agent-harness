@@ -531,6 +531,10 @@ python cli.py --act 6 --scenario standard
 
 **What to look for:** Separate outer-model calls from workflow-model calls. The outer agent cannot replace the confirmed request or approve its own order. After an order is accepted, the tasting plan should use receipt quantities and prices rather than inventing a new cart.
 
+**Concept: finishing execution is different from delivering the answer.** Act 5’s `tasting-plan` scenario and Act 6 use a structured final reply. The harness checks that every required menu has a serving sequence and compatible pairing IDs, then renders quantities, prices and listed allergens from authoritative data. Students still receive readable `agent_text`; `.run(...)` and the existing result keys stay the same. A missing or invalid plan makes a tasting-only or composition result `needs_followup`, even when an order was successfully placed. The `event-shortage` task remains a sourcing summary and email review; it does not require an additional serving plan.
+
+The `delivery.checked` event and `outcome.tasting_delivery` evaluation check expose this distinction. Human review still assesses the reasoning and quality of the prose. See [tasting_delivery.py](formaggio/agents/tasting_delivery.py).
+
 ### Try two competing orders
 
 **Offline:**
@@ -624,7 +628,7 @@ Inspect changed configuration, checks, structured outcomes, response text change
 
 ### Step 4: judge what the checks do and do not establish
 
-Automated evaluation checks application properties such as cart validity, action counts, approval ordering, and required skill/resource usage. It also records errors and missing runs. A manager case that never reaches the approval threshold can leave that review path unexercised; inspect coverage as well as pass rates.
+Automated evaluation checks application properties such as cart validity, action counts, approval ordering, and required skill/resource usage. It also checks structured tasting-plan delivery and records errors and missing runs. A manager case that never reaches the approval threshold can leave that review path unexercised; inspect coverage as well as pass rates.
 
 Final prose needs separate review. Ask whether the response:
 
@@ -709,3 +713,11 @@ Choose one completed run and explain how the lecture concepts work together:
 | Long error-looking output with `--show-logs` | Negative tests deliberately trigger policy and audit failures. Check the final `OK`/`FAILED` result. The installed SDK can also emit a misleading approval-identity warning on successful resumes; verify the authoritative outcome. |
 | A live run reaches a time or call limit | Inspect its trace and partial outcomes. A limit is an intentional bound on execution; a stopped run is not evidence that the requested work completed. Use a fixture to inspect the expected path. |
 | Changes to host environment variables do not appear | Reopening an existing container does not refresh its environment. Set the variable in the current container shell. |
+
+### Runtime maintenance notes
+
+Optional prompt instructions use explicit `<!-- if:planning -->` and `<!-- if:skills -->` blocks. Their wording can change without breaking layer removal; mandatory policies stay outside those blocks.
+
+Act 6 refreshes a compact order summary before each model call. Full receipts remain in the returned orders and audit events. Compaction events reference the corresponding `context.model_input` event instead of copying before/after message histories; detailed model inputs remain available through `--inspect-run`.
+
+The pinned agent-framework 1.19.0 can emit an approval-identity warning after it has already accepted a matching host response. The isolated diagnostic confirmed this duplicate-binding case saves the approved artifact exactly once. Keep investigating any unexpected approval failure; warnings are not globally suppressed. An SDK upgrade should be verified separately against the approval and complete-request tests.

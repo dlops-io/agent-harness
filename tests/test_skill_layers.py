@@ -12,14 +12,13 @@ from unittest.mock import patch
 
 import httpx
 
-from acts.act4_harness import run_harness
 from acts.act5_skills import build_act5
 from formaggio.agents.execution import ActiveBudget
 from formaggio.agents.harness_state import PreferenceMemory
 from formaggio.agents.planner_layers import PlannerBudget
 from formaggio.agents.runtime import ConsoleProgress
 from formaggio.agents.skill_layer import Skills
-from formaggio.agents.skill_support import SKILLS_ROOT, SkillFiles
+from formaggio.agents.skill_support import SKILLS_ROOT
 from formaggio.fixtures.skills_fixture import SkillsFixture
 from tests.support import RecordingTest
 from tests.test_planner_layers import normalized
@@ -45,11 +44,12 @@ class SkillLayerTests(RecordingTest):
             self.assertFalse(api.is_closed())
         return result, backend
 
-    def test_complete_requests_match_original_driver_for_all_scenarios_and_reviews(self):
+    def test_complete_requests_match_reviewed_delivery_contract(self):
+        # Reviewed contract: explicit final-plan schema and compact authoritative context.
         cases = [
             ("event-shortage", "approve", {}, "161a6842c393fb992df93b826faa4d09f50221b6ab3a7df52d503678cda54478"),
             ("event-shortage", "decline", {}, "ce5217ba31da4393ff7ce6292c704ed5cb142dd3bc8afcbbcb727dd1e8bf26e0"),
-            ("tasting-plan", "approve", {}, "94cc9dc120a9f87581a87d3874dfbf4894894ff3e230451f44f029cb46958998"),
+            ("tasting-plan", "approve", {}, "c0cab7de5d5370698142d3339a837388ea83a44655c6dff25bf5c40c634c7b1b"),
             ("stock-question", "approve", {}, "04a67435df64c700f14fdfa59b444dabf6b23583651966d688a6ceacc871cef6"),
             ("event-shortage", "decline", {"demo_compaction": True, "document": "malicious"},
              "b2b741f95c75553f0fbdd13f91c9217c8717ea93e8ba15a655c9ab5d6baabd25"),
@@ -306,13 +306,9 @@ class SkillLayerTests(RecordingTest):
             self.assertEqual(*requests)
         asyncio.run(check())
 
-    def test_compatibility_wrapper_and_immutable_configuration(self):
+    def test_immutable_configuration(self):
         lesson = self.configured()
         with self.assertRaises(FrozenInstanceError): lesson.scenario = "stock-question"
         with self.assertRaises(ValueError): lesson.add(Skills())
         for name in ("skill_access", "approval", "template_check"):
             with self.assertRaises(ValueError): lesson.without(name)
-        result = asyncio.run(run_harness(self.recorder, skills_files=SkillFiles(), fixture=True,
-                                        scenario="stock-question", output_root=self.root / "compatibility"))
-        self.assertEqual(result["status"], "answered")
-        self.assertEqual(result["skills_loaded"], [])

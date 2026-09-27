@@ -279,6 +279,13 @@ class HarnessTests(RecordingTest):
         compactions = self.events(result, "compaction.applied")
         self.assertGreater(result["compactions"], 0)
         self.assertLess(compactions[0]["after_characters"], compactions[0]["before_characters"])
+        self.assertNotIn("before", compactions[0])
+        self.assertNotIn("after", compactions[0])
+        linked = self.recorder.query("SELECT event_type, payload_json FROM events WHERE event_id=?",
+                                     (compactions[0]["input_event_id"],))[0]
+        self.assertEqual(linked["event_type"], "context.model_input")
+        self.assertIn("messages", json.loads(linked["payload_json"]))
+
         self.assertNotIn("SYNTHETIC OLD PLANNING NOTE 0:", json.dumps(backend.requests))
         inputs = self.events(result, "context.model_input")
         for payload in inputs:

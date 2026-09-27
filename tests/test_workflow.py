@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 from acts.act3_workflow import run_act3
 from formaggio.shop.checkout import Checkout
 from formaggio.config import load_json
-from formaggio.shop.data_models import CartProposal, LineItem
+from formaggio.shop.data_models import LineItem
 from formaggio.operations.governance import ApprovalRequired, PolicyBlocked, PolicyCheckError
 from formaggio.shop.store import Store
 from tests.support import RecordingTest, fixture
@@ -292,4 +292,3 @@ class WorkflowTests(RecordingTest):
         self.assertIn("portions", json.dumps(requests[1]))
         self.assertEqual(len(self.events(result, "model.request")), 2)
         self.assertNotIn("unit-test-credential", json.dumps(self.recorder.timeline(result["run_id"])))
-

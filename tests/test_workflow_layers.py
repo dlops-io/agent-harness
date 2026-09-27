@@ -9,10 +9,11 @@ from unittest.mock import patch
 
 import httpx
 
-from acts.act3_workflow import AgentProposer, build_act3, build_workflow, drive_workflow
+from acts.act3_workflow import build_act3, build_workflow
+from formaggio.agents.workflow_runtime import AgentProposer, WorkflowRun, drive_workflow
 from cli import print_workflow_result
 from formaggio.agents.context import load_scenario
-from formaggio.agents.execution import ActiveBudget
+from formaggio.agents.execution import ActiveBudget, ModelControl
 from formaggio.agents.runtime import ConsoleProgress
 from formaggio.agents.workflow_layers import WorkflowBudget
 from formaggio.config import ROOT
@@ -56,7 +57,9 @@ class WorkflowLayerTests(RecordingTest):
         prompt = (ROOT / "prompts/cart_proposer.md").read_text()
         prompt += "\nAuthoritative classroom shop policy:\n" + checkout.store.policy.model_dump_json()
         async with local_api(backend) as api:
-            proposer = AgentProposer(self.recorder, self.run_id, prompt, "fixture-model", api_client=api)
+            state = WorkflowRun(recorder=self.recorder, run_id=self.run_id, model="fixture-model", progress=None)
+            state.middleware.append(ModelControl(state))
+            proposer = AgentProposer(self.recorder, self.run_id, prompt, "fixture-model", api_client=api, execution_state=state)
             workflow = build_workflow(checkout, self.recorder, self.run_id, proposer)
             result = await drive_workflow(workflow, WorkflowState(request=request, checkout_key="native"),
                                           self.recorder, self.run_id, None)

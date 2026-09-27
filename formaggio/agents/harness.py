@@ -94,7 +94,7 @@ class Harness:
                 api = api_client
                 if api is None:
                     api = execution.own(AsyncOpenAI(timeout=45, max_retries=0))
-                client, _, _ = make_client(self.model, run.middleware, api, function_limits=run.limits)
+                client = make_client(self.model, run.middleware, api, function_limits=run.limits)
                 agent = self.agent_factory(client, run.store, run.request, recorder=recorder, run_id=run.run_id,
                                            context_providers=run.context_providers, prompt=self.prompt)
                 message = customer_message(run.request)

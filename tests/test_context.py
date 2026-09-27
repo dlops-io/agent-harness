@@ -225,7 +225,7 @@ class ContextTests(RecordingTest):
         output = io.StringIO()
         with patch("sys.argv", ["cli.py", "--preview-context"]), redirect_stdout(output), \
              patch.object(cli, "Recorder", side_effect=AssertionError("Preview opened a database")), \
-             patch("formaggio.agents.runtime.AsyncOpenAI", side_effect=AssertionError("Preview opened a client")):
+             patch("formaggio.agents.harness.AsyncOpenAI", side_effect=AssertionError("Preview opened a client")):
             cli.main()
         packet = json.loads(output.getvalue())
         self.assertEqual(len(packet["same_tools"]), 5)

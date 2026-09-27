@@ -24,20 +24,14 @@ class RecordedTodos(TodoSessionStore):
 
 class HarnessToolTrace(ToolTrace):
     """Bound total tool work across approval resumes; fail closed on hook errors."""
-    def __init__(self, *args, model_trace=None, execution_state=None, **kwargs):
+    def __init__(self, *args, execution_state, **kwargs):
         super().__init__(*args, **kwargs)
         self.calls, self.blocked_reason = 0, None
-        self.model_trace = model_trace
         self.execution_state = execution_state
 
     async def process(self, context, call_next):
-        if self.model_trace and self.model_trace.failure:
-            raise MiddlewareFailure(self.model_trace.failure)
-        if self.execution_state is not None:
-            self.execution_state.admit("tool")
+        self.execution_state.admit("tool")
         self.calls += 1
-        if self.execution_state is None and self.calls > 20:
-            raise MiddlewareFailure("Harness tool budget exhausted (20 calls).")
         async def guarded_call():
             try:
                 await call_next()
@@ -52,10 +46,7 @@ class HarnessToolTrace(ToolTrace):
         except Exception as exc:
             # The SDK can attempt another model turn before propagating a tool
             # middleware error. Keep that attempted turn inside the audit boundary.
-            if self.execution_state is not None:
-                self.execution_state.failure = "Harness tool or required audit failed: " + str(exc)
-            if self.model_trace:
-                self.model_trace.failure = "Harness tool or required audit failed: " + str(exc)
+            self.execution_state.failure = "Harness tool or required audit failed: " + str(exc)
             raise MiddlewareFailure("Harness tool or required audit failed: " + str(exc)) from exc
 
 

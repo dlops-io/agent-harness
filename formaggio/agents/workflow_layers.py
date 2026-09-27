@@ -18,7 +18,7 @@ class WorkflowTrace:
 
     def configure(self, run):
         run.middleware.append(ModelTrace(run.recorder, run.run_id, run.progress,
-                                        max_calls=None, model=run.model, label=self.label))
+                                        model=run.model, label=self.label))
 
     @contextmanager
     def scope(self, run):

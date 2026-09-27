@@ -43,17 +43,18 @@ class CompositionLayerTests(RecordingTest):
             self.assertFalse(api.is_closed())
         return result, backend
 
-    def test_default_complete_requests_match_original_for_all_workflow_outcomes(self):
+    def test_complete_requests_match_reviewed_composition_contract(self):
+        # Reviewed contract: explicit final-plan schema and compact authoritative context.
         cases = [
-            ("standard", "approve", "3c2c56bd678f10f7bc9ee62d01a32769e52c752be20dd92f82e088dd7e5f1398"),
-            ("manager-approval", "approve", "7436c337b02bf1bab01aae761f2b88eed40a460ccb4395beb2bb7dda449742fa"),
-            ("manager-approval", "decline", "5c01b7eb6ef0564a01734e3aa5671d341ddeb19a49b1dd07ffdabe0b8f3b5e46"),
-            ("two-orders", "approve", "d3be925bd2d1c6ac7349a08d4cba5c4c0ef8209b8647f2c20c43dbf529bf0a1d"),
-            ("out-of-stock", "approve", "1e6645fffb134792d8bbddf1f6c6e5d2c82669331023e03af1a525e94fb782ad"),
-            ("missing-details", "approve", "e95bdc9801f30b3b1f73b4c2d5137be990e6fb69bbd28db5a875583a266c5e50"),
-            ("complaint", "approve", "2df991df7f546786d4f8c85092d6ae7c04473733b26b45cdcc9a86620c74a623"),
-            ("dairy-allergy", "approve", "be9af049e8d9b2306fb6f3330b4ce44bb3886d5d016b9e180576bae85af49f2b"),
-            ("under-sized", "approve", "88e6b258826d93ed1f32a184e4ef0b86df8207adeba1ea9446270bb45c78afe5"),
+            ("standard", "approve", "257c883699bdf3f19d2635209e3378056b27f2252bc73ddb19799864a1193b3d"),
+            ("manager-approval", "approve", "793615c314d279bd1121fe9baea9735b13455b1eb04bae1022228f5ea3f470a3"),
+            ("manager-approval", "decline", "b3c88c3d3f4af9009bc7c6902e3b4e5794bdb474eea26a2a648644241443933f"),
+            ("two-orders", "approve", "75192ba5a2283581c5c5599ba7d780e61ce8341f41d642d46c2d2dffda040878"),
+            ("out-of-stock", "approve", "72a113ee3f953158aaa50a6ee3e124c935685d883dbcfbfbce372fcae10e6b93"),
+            ("missing-details", "approve", "e846bea4ad131ab20e70d135bee80e584eb187df90ba7ddf13d05d94bd10984b"),
+            ("complaint", "approve", "1823a0ebb5903a396794d2141423828b0a7cdd099db5d3149513d260e84e576c"),
+            ("dairy-allergy", "approve", "328a8545a51a74b5629d6dacb969c9aad7e5a34b751a50575f99a81bdeb8bdfb"),
+            ("under-sized", "approve", "185d83a2b58cb8630c7bb67d1a1795c4a582f53ccd5108f0cfeb956a501ed32e"),
         ]
         async def check():
             for scenario, decision, expected in cases:
@@ -77,7 +78,7 @@ class CompositionLayerTests(RecordingTest):
                     self.assertFalse(api.is_closed())
                 self.assertEqual(result["workflow_model_calls"], 2)
                 self.assertEqual(result["orders"][0]["status"], "placed")
-                for requests, expected in ((outer.requests, "1e6645fffb134792d8bbddf1f6c6e5d2c82669331023e03af1a525e94fb782ad"),
+                for requests, expected in ((outer.requests, "72a113ee3f953158aaa50a6ee3e124c935685d883dbcfbfbce372fcae10e6b93"),
                                            (inner.requests, "338263c20f5a258010b93b5cb06798f271f3c10e259ed46870eb124993c96fa1")):
                     self.assertEqual(hashlib.sha256(normalized(requests, self.root).encode()).hexdigest(), expected)
                 self.assertEqual(len(self.events(result, "model.request")), result["model_calls"] + 2 if trace else 0)
@@ -361,6 +362,10 @@ class CompositionLayerTests(RecordingTest):
             second, _ = await self.execute(lesson, checkout=checkout)
             self.assertEqual(first["orders"][0]["status"], "placed")
             self.assertEqual(second["orders"][0]["status"], "unresolved")
+            self.assertTrue(first["order_placed"])
+            self.assertFalse(second["order_placed"])
+            unstarted, _ = await self.execute(lesson, checkout=checkout, backend=SkillsFixture(calls=[]))
+            self.assertFalse(unstarted["order_placed"])
             self.assertEqual(len(checkout.orders), 1)
             self.assertNotEqual(first["orders"][0]["workflow_id"], second["orders"][0]["workflow_id"])
         asyncio.run(check())

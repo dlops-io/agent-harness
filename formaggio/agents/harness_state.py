@@ -3,7 +3,7 @@ import json
 import sqlite3
 from copy import deepcopy
 
-from agent_framework import ContextWindowCompactionStrategy, InMemoryHistoryProvider, Message, apply_compaction, MiddlewareFailure
+from agent_framework import InMemoryHistoryProvider, Message, apply_compaction, MiddlewareFailure
 
 from formaggio.config import load_json
 from formaggio.operations.governance import Governance
@@ -35,7 +35,8 @@ class PreferenceMemory:
         gate = Governance(recorder, run_id)
         def write():
             old = self.db.execute("SELECT value FROM preferences WHERE customer_id=?", (owner,)).fetchone()
-            merged = list(dict.fromkeys([*(json.loads(old[0]) if old else []), *confirmed_preferences]))
+            values = [*(json.loads(old[0]) if old else []), *confirmed_preferences]
+            merged = list(reversed(dict.fromkeys(reversed(values))))
             if len(merged) > 20:
                 raise ValueError("Teaching memory is limited to 20 preferences per customer.")
             self.db.execute("INSERT OR REPLACE INTO preferences VALUES (?, ?)", (owner, json.dumps(merged)))
@@ -78,11 +79,10 @@ class ApplicationContext:
         self.count = 0
 
     async def __call__(self, messages):
-        before = visible_messages(messages)
+        before = list(messages)
         # Replace previous capsules instead of letting copies grow with history.
         messages[:] = [m for m in messages if not m.additional_properties.get("formaggio_capsule")]
         projected = await apply_compaction(messages, strategy=self.native) if self.native is not None else list(messages)
-        after_history = visible_messages(projected)
         changed = len(projected) < len(messages)
         messages[:] = projected
         capsule = await self.capsule()
@@ -92,25 +92,17 @@ class ApplicationContext:
         characters = len(json.dumps(after, ensure_ascii=False))
         if characters > 64000:
             raise MiddlewareFailure("Assembled message context exceeds the 64,000-character teaching cap.")
-        self.recorder.event(self.run_id, "context.model_input", {**({"messages": after} if self.details else {}),
+        input_event_id = self.recorder.event(self.run_id, "context.model_input", {**({"messages": after} if self.details else {}),
                             "characters": characters, "capsule": capsule})
         if changed:
             self.count += 1
             self.recorder.event(self.run_id, "compaction.applied", {"strategy": "ContextWindowCompactionStrategy",
-                **({"before": before, "after_history": after_history, "after": after} if self.details else {}),
-                "before_characters": len(json.dumps(before, ensure_ascii=False)), "after_characters": characters,
-                "restored_state": capsule})
+                "input_event_id": input_event_id,
+                "before_characters": len(json.dumps(visible_messages(before), ensure_ascii=False)),
+                "after_characters": characters})
             if self.progress:
                 self.progress(f"Compaction: {len(before)} → {len(after)} messages; confirmed constraints and open work restored.")
         return changed
-
-
-class HarnessCompaction(ApplicationContext):
-    """Compatibility default: trusted state plus native history eviction."""
-    def __init__(self, recorder, run_id, capsule, *, progress=None):
-        super().__init__(recorder, run_id, capsule, progress=progress,
-                         native=ContextWindowCompactionStrategy(max_context_window_tokens=16000,
-                             max_output_tokens=2400, keep_last_tool_call_groups=1))
 
 
 async def no_post_turn_compaction(messages):

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from formaggio.shop.data_models import LineItem
 from formaggio.evaluation.evaluation import compare, report_experiment
 from formaggio.evaluation.evaluation_checks import assess_run
-from formaggio.evaluation.live_evaluation import dispatch, run_live_suite, select_cases
+from formaggio.evaluation.live_evaluation import dispatch, run_live_suite
 from formaggio.agents.skill_support import SKILLS_ROOT
 from tests.support import RecordingTest
 

@@ -8,9 +8,7 @@ from agent_framework import WorkflowBuilder
 from formaggio.agents.workflow_steps import (
     ConfirmRequest, ManagerApproval, PlaceOrder, ProposeCart, SelectPairings, ValidateCart,
 )
-from formaggio.agents.workflow_runtime import (
-    AgentProposer, FixtureProposer, WorkflowHarness, drive_workflow,
-)
+from formaggio.agents.workflow_runtime import WorkflowHarness
 from formaggio.agents.workflow_layers import WorkflowBudget, WorkflowTrace
 from formaggio.config import MODEL
 

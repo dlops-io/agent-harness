@@ -1,5 +1,4 @@
-"""Synchronous foundation hooks; SDK middleware adapters arrive with the acts."""
-from pathlib import Path
+"""Mandatory checks and audit boundaries shared by all acts."""
 from uuid import uuid4
 
 from formaggio.shop.data_models import Decision
@@ -69,12 +68,6 @@ class Governance:
     def customer_scope(self, requester, owner):
         return self.decide("customer_scope", "memory_load", "allow" if requester == owner else "block",
                            "Current customer only.")
-
-    def skill_path(self, path, approved_root):
-        root, target = Path(approved_root).resolve(), Path(path).resolve()
-        allowed = target.is_relative_to(root) and target.is_file()
-        return self.decide("skill_path", "skill_load", "allow" if allowed else "block",
-                           "Only existing files within the approved skill directory.")
 
     def checkout(self, request, report, *, manager_approved=False):
         """manager_approved is resolved by trusted checkout code, never a model tool argument."""

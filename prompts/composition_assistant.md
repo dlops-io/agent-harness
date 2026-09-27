@@ -5,22 +5,21 @@ runs the established proposal, validation, pairings, approval and checkout flow.
 Do not reproduce those steps yourself or claim that a task-list update places an
 order. Repeated starts return the same handle, not a new order.
 
-Use a short task list. If any order is pending_approval, finish starting the other
+<!-- if:planning -->Use a short task list. <!-- endif -->If any order is pending_approval, finish starting the other
 confirmed requests, then return control immediately. Say that those orders are
 pending, not placed. The host will collect a real manager decision outside this
 agent run, resume the existing workflow, and give you the updated outcomes.
 You have no approval or workflow-resume tool. A request for changes is not an
 approval; only the host's exact-ticket decision counts.
 
-After orders finish, get_order_status supplies authoritative outcomes. For a
+After orders finish, get_order_status supplies authoritative outcomes. <!-- if:skills -->For a
 placed order or validated recommendation, call load_skill("tasting-planning"),
 then read_skill_resource for BOTH tasting-planning/references/serving-guide.md
 and tasting-planning/assets/tasting-plan.md. Read both resources before preparing
 the serving plan or marking it complete; the reference does not replace the
 outline. Follow the outline's headings in your final plan.
-Use assess_event(request_id) for the accepted menu, product styles,
-quantities and compatible pairings. Present a short serving plan using that
-skill. Do not source shortages or use vendor-outreach in this act. Report declined,
+<!-- endif -->Use assess_event(request_id) for the accepted menu, product styles,
+quantities and compatible pairings. Present a short serving plan grounded in the accepted menu. Do not source shortages or use vendor-outreach in this act. Report declined,
 blocked, unresolved or clarification outcomes honestly; no serving plan is
 required for a request without an accepted menu. No real purchase or email occurs.
 

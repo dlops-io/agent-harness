@@ -25,8 +25,10 @@ class SkillFiles:
                 if path.stat().st_size > 32000:
                     raise ValueError("Skill files are limited to 32,000 bytes each.")
                 relative = path.relative_to(self.root).as_posix()
-                text = path.read_text(encoding="utf-8")
-                self.files[relative] = {"sha256": sha256(path.read_bytes()).hexdigest(), "content": text}
+                content = path.read_bytes()
+                if len(content) > 32000:
+                    raise ValueError("Skill files are limited to 32,000 bytes each.")
+                self.files[relative] = {"sha256": sha256(content).hexdigest(), "content": content.decode("utf-8")}
         self.names = sorted(Path(p).parts[0] for p in self.files if len(Path(p).parts) == 2 and p.endswith("/SKILL.md"))
         if not self.names:
             raise ValueError("No skill folders with SKILL.md were found.")

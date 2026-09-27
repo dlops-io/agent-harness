@@ -1,7 +1,7 @@
 [project]
 name = "app"
 version = "0.1.0"
-description = "Add your description here"
+description = "A six-act tutorial on agents, context, harnesses, skills and evaluation"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

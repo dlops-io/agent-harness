@@ -9,30 +9,18 @@ from openai import AsyncOpenAI
 from formaggio.agents.composition import WorkflowOrders
 from formaggio.agents.composition_layers import CompositionBudget, CompositionTrace
 from formaggio.agents.composition_review import run_with_workflow_reviews
+from formaggio.agents.prompt_template import render_prompt
 from formaggio.agents.execution import ExecutionState, ModelControl, RecordedExecution, recorded_trace
 from formaggio.agents.harness_state import ApplicationContext, HarnessHistory
 from formaggio.agents.planner_layers import Compaction, Planning
 from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES
-from formaggio.agents.runtime import ModelTrace, console_progress, make_client, run_snapshot
+from formaggio.agents.runtime import CONTEXT_WINDOW_TOKENS, MAX_OUTPUT_TOKENS, ModelTrace, console_progress, make_client, run_snapshot
 from formaggio.agents.skill_layer import Skills
 from formaggio.agents.skill_support import SKILL_TOOLS
 from formaggio.agents.workflow_runtime import AgentProposer, FixtureProposer, WorkflowRun
+from formaggio.agents.tasting_delivery import DELIVERY_INSTRUCTIONS, deliver_tasting_reply, tasting_reply_schema
 from formaggio.config import MODEL, ROOT, load_json
 from formaggio.shop.checkout import Checkout
-
-
-def composition_prompt(prompt, features):
-    if "planning" not in features:
-        prompt = prompt.replace("Use a short task list. ", "")
-        prompt += "\nTask-list tools are disabled. Use the available workflow tools directly."
-    if "skills" not in features:
-        start = prompt.find('For a\nplaced order or validated recommendation, call load_skill')
-        end = prompt.find('Use assess_event(request_id)', start)
-        if start >= 0 and end >= 0:
-            prompt = prompt[:start] + prompt[end:]
-        prompt = prompt.replace("Present a short serving plan using that\nskill.", "Present a short serving plan grounded in the accepted menu.")
-        prompt += "\nSkill discovery and loading are disabled for this run."
-    return prompt
 
 
 @dataclass(frozen=True)
@@ -80,9 +68,10 @@ class CompositionHarness:
         files = features["skills"].snapshot() if "skills" in features else None
         requests = self.request_loader(self.scenario)
         checkout = checkout if checkout is not None else Checkout()
+        reply_schema = tasting_reply_schema(checkout.store)
         progress = console_progress(progress)
         prompt = (ROOT / "prompts/composition_assistant.md").read_text() if self.prompt is None else self.prompt
-        prompt = composition_prompt(prompt, features)
+        prompt = render_prompt(prompt, features) + DELIVERY_INSTRUCTIONS
         proposer_prompt = (ROOT / "prompts/cart_proposer.md").read_text() if self.proposer_prompt is None else self.proposer_prompt
         proposer_prompt += "\nAuthoritative classroom shop policy:\n" + checkout.store.policy.model_dump_json()
         proposals = load_json("workflow_proposals.json").get("manager-approval" if self.scenario == "two-orders" else self.scenario)
@@ -94,7 +83,7 @@ class CompositionHarness:
         model = "fixture-model" if mode == "fixture" else self.model
         snapshot = run_snapshot(self.model, "composition", prompt, next(iter(requests.values())),
                                 {k: r.model_dump(mode="json") for k, r in requests.items()}, [])
-        snapshot.update(reply_schema=None, workflow="act3-as-tool", workflow_prompt=proposer_prompt,
+        snapshot.update(reply_schema=reply_schema.model_json_schema(), workflow="act3-as-tool", workflow_prompt=proposer_prompt,
             skill_files=files.files if files else {}, decision_source=self.decision_source,
             layers=[layer.configuration() for layer in self.layers], function_limits=dict(state.limits),
             max_model_calls=state.max_model_calls, max_tool_calls=state.max_tool_calls,
@@ -115,7 +104,7 @@ class CompositionHarness:
                         budget.configure_proposer(inner)
                     inner.middleware.append(ModelControl(inner))
                     if tracing:
-                        inner.middleware.append(ModelTrace(recorder, run_id, progress, max_calls=None,
+                        inner.middleware.append(ModelTrace(recorder, run_id, progress,
                                                            model=self.model, label="Cart proposer"))
                     proposer_states[request_id] = inner
                     proposers[request_id] = execution.own(AgentProposer(recorder, run_id, proposer_prompt, self.model,
@@ -133,17 +122,17 @@ class CompositionHarness:
                     return [i.to_dict() for i in await todos.load_items(session, source_id=todo_provider.source_id)] if todos else []
                 async def capsule():
                     return {"confirmed_requests": {k: r.model_dump(mode="json") for k, r in requests.items()},
-                            "orders": [orders.view(k) for k in requests], "tasks": await task_state(),
+                            "orders": [orders.summary(k) for k in requests], "tasks": await task_state(),
                             "authority": "Only host manager decisions can resume pending orders. Logs and tasks do not grant approval."}
-                native = (ContextWindowCompactionStrategy(max_context_window_tokens=16000,
-                          max_output_tokens=2400, keep_last_tool_call_groups=1) if "compaction" in features else None)
+                native = (ContextWindowCompactionStrategy(max_context_window_tokens=CONTEXT_WINDOW_TOKENS,
+                          max_output_tokens=MAX_OUTPUT_TOKENS, keep_last_tool_call_groups=1) if "compaction" in features else None)
                 context = ApplicationContext(recorder, run_id, capsule, progress=progress, native=native, details=tracing)
                 tool_trace = HarnessToolTrace(recorder, run_id,
                     [t.name for t in tools] + (TODO_NAMES if todos else []) + (SKILL_TOOLS if access else []),
                     progress if tracing else None, details=tracing, execution_state=state)
                 middleware = [ModelControl(state)]
                 if tracing:
-                    middleware.append(ModelTrace(recorder, run_id, progress, max_calls=None,
+                    middleware.append(ModelTrace(recorder, run_id, progress,
                                                  model=model, label=features["trace"].label))
                 middleware.append(tool_trace)
                 if access:
@@ -153,19 +142,22 @@ class CompositionHarness:
                     api = execution.own(CompositionFixture(self.scenario, planning=todos is not None, skills=files is not None).client())
                 else:
                     api = api_client if api_client is not None else execution.own(AsyncOpenAI(timeout=45, max_retries=0))
-                client, _, _ = make_client(model, middleware, api, function_limits=state.limits)
+                client = make_client(model, middleware, api, function_limits=state.limits)
                 agent = self.agent_factory(client, tools, prompt, history=HarnessHistory(), context=context,
                                           todo_provider=todo_provider, skills_provider=skill_provider)
                 session = agent.create_session()
                 response = await run_with_workflow_reviews(agent, session, orders, manager, recorder, run_id,
-                                                            active_budget=state.active_budget)
+                                                            active_budget=state.active_budget, reply_schema=reply_schema)
                 values = [orders.view(k) for k in requests]
-                result = {"run_id": run_id, "agent_text": response.text, "orders": values,
-                    "status": "blocked" if tool_trace.blocked_reason else "needs_followup" if any(v["status"] == "not_started" for v in values) else "completed",
+                menus = {value["request_id"]: (requests[value["request_id"]], orders.assessment(value["request_id"]), value["status"])
+                         for value in values if value["status"] in {"placed", "recommendation"}}
+                text, delivered = deliver_tasting_reply(response.text, menus, checkout.store, recorder, run_id)
+                result = {"run_id": run_id, "agent_text": text, "orders": values,
+                    "status": "blocked" if tool_trace.blocked_reason else "needs_followup" if not delivered or any(v["status"] == "not_started" for v in values) else "completed",
                     "reason": tool_trace.blocked_reason, "model_calls": state.model_calls,
                     "workflow_model_calls": sum(s.model_calls for s in proposer_states.values()),
                     "skills_loaded": access.loaded if access else [], "skill_resources": access.resources if access else [],
-                    "tasks": await task_state(), "compactions": context.count, "order_placed": bool(checkout.orders),
+                    "tasks": await task_state(), "compactions": context.count, "order_placed": any(value["order_placed"] for value in values),
                     "scripted": mode == "fixture", "email_transmitted": False}
                 recorder.event(run_id, "composition.result", result)
             execution.set_outcome("blocked" if result["status"] == "blocked" else "completed")

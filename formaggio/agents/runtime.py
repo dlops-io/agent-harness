@@ -1,4 +1,4 @@
-"""SDK model/tool hooks shared by Acts 1–2; no evaluation suite is invoked."""
+"""SDK model/tool tracing shared by all acts; evaluations run separately."""
 import json
 from time import monotonic
 from hashlib import sha256
@@ -7,12 +7,13 @@ from uuid import uuid4
 
 from agent_framework import ChatMiddleware, FunctionMiddleware, MiddlewareFailure
 from agent_framework.openai import OpenAIChatClient
-from openai import AsyncOpenAI
 
 from formaggio.config import ROOT, source_hashes
 from formaggio.shop.data_models import AgentReply
 
-MODEL_OPTIONS = {"store": False, "max_tokens": 2400, "parallel_tool_calls": False}
+CONTEXT_WINDOW_TOKENS = 16000
+MAX_OUTPUT_TOKENS = 2400
+MODEL_OPTIONS = {"store": False, "max_tokens": MAX_OUTPUT_TOKENS, "parallel_tool_calls": False}
 FUNCTION_LIMITS = {"max_iterations": 8, "max_function_calls": 20,
                    "max_duration_seconds": 120, "allow_concurrent_invocation": False}
 
@@ -137,20 +138,14 @@ def console_progress(progress):
 
 
 class ModelTrace(ChatMiddleware):
-    def __init__(self, recorder, run_id, progress=None, *, max_calls=8, model=None, label="Agent"):
+    def __init__(self, recorder, run_id, progress=None, *, model=None, label="Agent"):
         self.recorder, self.run_id, self.progress = recorder, run_id, progress
         self.calls = 0
-        self.max_calls = max_calls
-        self.failure = None
         self.model, self.label = model, label
 
     async def process(self, context, call_next):
-        if self.failure:
-            raise MiddlewareFailure(self.failure)
         if context.stream:
             raise MiddlewareFailure("This teaching act uses non-streaming responses.")
-        if self.max_calls is not None and self.calls >= self.max_calls:
-            raise MiddlewareFailure(f"Maximum of {self.max_calls} model calls reached.")
         self.calls += 1
         options = dict(context.options or {})
         tools = options.pop("tools", []) or []
@@ -245,12 +240,10 @@ class ToolTrace(FunctionMiddleware):
                                   context.result, limit=900, result=True)
 
 
-def make_client(model, middleware, api_client=None, *, function_limits=None):
-    owned = api_client is None
-    api_client = api_client or AsyncOpenAI(timeout=45, max_retries=0)
-    client = OpenAIChatClient(model=model, async_client=api_client, middleware=middleware,
+def make_client(model, middleware, api_client, *, function_limits=None):
+    """Adapt a client whose lifetime belongs to the caller."""
+    return OpenAIChatClient(model=model, async_client=api_client, middleware=middleware,
                               function_invocation_configuration=function_limits or FUNCTION_LIMITS)
-    return client, api_client, owned
 
 
 def run_snapshot(model, mode, prompt, request, packet, tools):

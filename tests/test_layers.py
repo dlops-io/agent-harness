@@ -13,7 +13,7 @@ from openai import AsyncOpenAI
 from acts.act1_agent import build_act1, build_agent
 from cli import print_agent_result
 from formaggio.agents.context import ShopContextProvider, build_context, customer_message, load_scenario
-from formaggio.agents.layers import Budget, CartCheck, Context, Layer, Trace
+from formaggio.agents.layers import Budget, Context, Layer, Trace
 from formaggio.agents.runtime import ConsoleProgress, make_client
 from formaggio.shop.data_models import LineItem
 from formaggio.shop.store import Store
@@ -54,7 +54,7 @@ class LayerTests(RecordingTest):
         """Run the SDK agent directly, without Harness or any execution middleware."""
         backend, store, request = ScriptedResponses(), Store(), load_scenario("standard")
         async with local_api(backend) as api:
-            client, _, _ = make_client("fixture-model", [], api)
+            client = make_client("fixture-model", [], api)
             providers = [] if mode == "basic" else [ShopContextProvider(
                 build_context(request, store, mode), self.recorder, self.run_id)]
             agent = build_agent(client, store, request, context_providers=providers)

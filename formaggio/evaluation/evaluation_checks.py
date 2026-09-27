@@ -130,6 +130,11 @@ def assess_run(act, case, result, events):
                      else ("references/vendor-guide.md", "assets/email-template.html"))}
         actual = {p["path"] for p in records("skill.resource_read")}
         check("context.required_resources", sorted(required), sorted(actual), required <= actual)
+    if (act == 5 and case["scenario"] == "tasting-plan") or act == 6:
+        delivery = records("delivery.checked")
+        check("outcome.tasting_delivery", True, delivery[-1] if delivery else None,
+              bool(delivery) and delivery[-1]["ready"],
+              "Checked final plan structure and menu/pairing grounding; prose quality remains a separate review.")
     checks.append(CheckResult(check_id="human.prose_quality", expected="Instructor review", observed=None,
                              status="not_applicable", explanation="Automated checks do not score prose, clarification wording or serving-plan quality."))
     normalized = {"status": status, "carts": [sorted(c, key=lambda i: i["product"]) for c in carts],

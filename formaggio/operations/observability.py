@@ -221,8 +221,10 @@ class Recorder:
     def event(self, run_id, event_type, payload=None, *, span_id=None):
         context = trace.get_current_span().get_span_context()
         span_id = span_id or (f"{context.span_id:016x}" if context.is_valid else None)
+        event_id = uuid4().hex
         self.write("INSERT INTO events(event_id,run_id,span_id,timestamp,event_type,payload_json) VALUES(?,?,?,?,?,?)",
-                   (uuid4().hex, run_id, span_id, now(), event_type, self._json(payload or {})))
+                   (event_id, run_id, span_id, now(), event_type, self._json(payload or {})))
+        return event_id
 
     @contextmanager
     def span(self, run_id, name, kind="application", *, expected_outcomes=None):

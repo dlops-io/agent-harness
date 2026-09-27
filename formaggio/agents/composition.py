@@ -60,6 +60,14 @@ class WorkflowOrders:
                 "tickets": [t.model_dump(mode="json") for t in handle.pending.values()],
                 "message": "Return control to the host for manager review. No order has been placed."}
 
+    def summary(self, request_id):
+        """Compact model context; full receipts remain available through view()."""
+        value = self.view(request_id)
+        value.pop("pairings", None)
+        if receipt := value.get("receipt"):
+            value["receipt"] = {key: receipt[key] for key in ("order_id", "approval_ticket_id")}
+        return value
+
     async def advance(self, handle, stream):
         pending, outcomes = {}, []
         try:

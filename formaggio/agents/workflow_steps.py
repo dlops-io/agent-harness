@@ -130,5 +130,3 @@ class PlaceOrder(ShopStep):
             return
         await ctx.yield_output(WorkflowOutcome(status="placed", attempts=state.attempts, receipt=receipt,
             report=receipt.report, pairings=receipt.pairings, message="Mock order placed. No purchase or email was sent."))
-
-

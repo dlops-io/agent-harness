@@ -83,13 +83,6 @@ class GovernanceTests(RecordingTest):
             request,items=fixture(name,**changes)
             self.assertEqual(self.gate.checkout(request,Store().validate(request,items)).outcome,"block")
 
-    def test_customer_and_resource_boundaries(self):
+    def test_customer_boundaries(self):
         self.assertEqual(self.gate.customer_scope("a","b").outcome,"block")
         self.assertEqual(self.gate.customer_scope("a","a").outcome,"allow")
-        root=self.root/"skills"; root.mkdir()
-        valid=root/"SKILL.md"; valid.write_text("fixture")
-        outside=self.root/"outside.md"; outside.write_text("fixture")
-        (root/"escape.md").symlink_to(outside)
-        self.assertEqual(self.gate.skill_path(valid,root).outcome,"allow")
-        self.assertEqual(self.gate.skill_path(root/"../outside.md",root).outcome,"block")
-        self.assertEqual(self.gate.skill_path(root/"escape.md",root).outcome,"block")
