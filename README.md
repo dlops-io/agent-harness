@@ -552,6 +552,7 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 |---|---|
 | [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
 | [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
+| [Shared execution](formaggio/agents/execution.py) | Per-run counters, active time, resource cleanup, final status, and tracing scopes |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
 | [Operations](formaggio/operations/) | Governance and SQLite/OpenTelemetry recording |
@@ -560,6 +561,14 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 | [Policies](data/policies.json), [scenarios](data/scenarios.json), and [customers](data/customers.json) | Classroom rules and confirmed inputs |
 | [Tests](tests/) | Counterexamples for invalid carts, forged approvals, customer isolation, and audit failures |
 | [CLI](cli.py) | Available commands and argument constraints; use `python cli.py --help` |
+
+### Shared execution groundwork
+
+Acts 1–2 use the shared execution module through their harness and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
+
+Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments; a future workflow adapter can leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 currently use one continuous segment. Acts 3–6 retain their existing implementations until their individual migrations.
+
+`RecordedExecution` closes explicitly owned resources before recording completion, leaves borrowed clients with their caller, and records errors or cancellation. If cleanup or finalization also fails, the original exception is preserved with a diagnostic note. A recording failure still propagates; it cannot guarantee a persisted terminal status when storage is unavailable.
 
 ### What persists between commands?
 

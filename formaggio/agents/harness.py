@@ -1,13 +1,12 @@
 """Acts 1–2 run lifecycle. Layer configuration is reusable; all runtime state is local."""
-import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
-from agent_framework import ChatMiddleware, FunctionMiddleware, MiddlewareFailure
 from openai import AsyncOpenAI
 
 from formaggio.agents.context import customer_ask, customer_message, instructions, load_scenario
+from formaggio.agents.execution import ExecutionState, ModelControl, RecordedExecution, ToolControl
 from formaggio.agents.layers import Layer
 from formaggio.agents.runtime import ToolTrace, console_progress, make_client, run_snapshot
 from formaggio.agents.tools import build_tools
@@ -17,7 +16,7 @@ from formaggio.shop.store import Store
 
 
 @dataclass
-class Run:
+class Run(ExecutionState):
     recorder: object
     model: str
     store: Store
@@ -27,49 +26,11 @@ class Run:
     mode: str = "none"
     packet: dict = field(default_factory=lambda: {"mode": "none", "sources": [], "excluded_products": [],
                                                   "note": "Context layer disabled."})
-    # Explicit SDK loop fallback when Budget is absent. No exact call/time budget.
-    limits: dict = field(default_factory=lambda: {"max_iterations": 40, "max_function_calls": None,
-                                                 "max_duration_seconds": None, "allow_concurrent_invocation": False})
-    max_model_calls: int | None = None
-    max_tool_calls: int | None = None
-    model_calls: int = 0
-    tool_calls: int = 0
-    failure: str | None = None
     trace_enabled: bool = False
     middleware: list = field(default_factory=list)
     context_providers: list = field(default_factory=list)
     report: object = None
     cart_check_status: str = "not_run"
-
-    def admit(self, kind):
-        if self.failure:
-            raise MiddlewareFailure(self.failure)
-        maximum = getattr(self, f"max_{kind}_calls")
-        count = getattr(self, f"{kind}_calls")
-        if maximum is not None and count >= maximum:
-            self.failure = f"Maximum of {maximum} {kind} calls reached."
-            raise MiddlewareFailure(self.failure)
-        setattr(self, f"{kind}_calls", count + 1)
-
-
-class ModelControl(ChatMiddleware):
-    def __init__(self, run):
-        self.run = run
-
-    async def process(self, context, call_next):
-        if context.stream:
-            raise MiddlewareFailure("This teaching act uses non-streaming responses.")
-        self.run.admit("model")
-        await call_next()
-
-
-class ToolControl(FunctionMiddleware):
-    def __init__(self, run):
-        self.run = run
-
-    async def process(self, context, call_next):
-        self.run.admit("tool")
-        await call_next()
 
 
 @dataclass(frozen=True)
@@ -117,10 +78,9 @@ class Harness:
                                 run.packet, schemas)
         snapshot.update(function_limits=dict(run.limits), max_model_calls=run.max_model_calls,
                         max_tool_calls=run.max_tool_calls, layers=[layer.configuration() for layer in self.layers])
-        run.run_id = recorder.start_run(recorder.version(snapshot), case_id=self.scenario, act=self.act,
-                                        model=self.model, mode=self.execution_mode)
-        api, owned = api_client, api_client is None
-        try:
+        async with RecordedExecution(recorder, snapshot, case_id=self.scenario, act=self.act,
+                                     model=self.model, mode=self.execution_mode) as execution:
+            run.run_id = execution.run_id
             run.middleware = [ModelControl(run), ToolControl(run)]
             for layer in self.layers:
                 layer.attach(run)
@@ -131,8 +91,9 @@ class Harness:
             async with AsyncExitStack() as scopes:
                 for layer in self.layers:
                     await scopes.enter_async_context(layer.scope(run))
-                if owned:
-                    api = AsyncOpenAI(timeout=45, max_retries=0)
+                api = api_client
+                if api is None:
+                    api = execution.own(AsyncOpenAI(timeout=45, max_retries=0))
                 client, _, _ = make_client(self.model, run.middleware, api, function_limits=run.limits)
                 agent = self.agent_factory(client, run.store, run.request, recorder=recorder, run_id=run.run_id,
                                            context_providers=run.context_providers, prompt=self.prompt)
@@ -150,16 +111,6 @@ class Harness:
                     "items": [i.model_dump() for i in reply.items], "order_placed": False,
                     "cart_report": run.report.model_dump() if run.report else None,
                     "cart_check_status": run.cart_check_status})
-            recorder.finish_run(run.run_id)
             return {"run_id": run.run_id, "mode": run.mode, "reply": reply, "report": run.report,
                     "context": run.packet, "model_calls": run.model_calls, "tool_calls": run.tool_calls,
                     "cart_check_status": run.cart_check_status}
-        except (TimeoutError, asyncio.CancelledError):
-            recorder.finish_run(run.run_id, "stopped", "Run timed out or was cancelled.")
-            raise
-        except Exception as exc:
-            recorder.finish_run(run.run_id, "error", str(exc))
-            raise
-        finally:
-            if owned and api is not None:
-                await api.close()

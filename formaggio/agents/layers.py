@@ -1,5 +1,4 @@
 """Optional teaching features for Acts 1–2; instances hold configuration only."""
-import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from math import isfinite
@@ -7,7 +6,7 @@ from typing import ClassVar
 
 from formaggio.agents.context import ShopContextProvider, build_context
 from formaggio.agents.runtime import ModelTrace
-from formaggio.operations.observability import sdk_tracing
+from formaggio.agents.execution import ActiveBudget, recorded_trace
 
 
 class Layer:
@@ -48,7 +47,7 @@ class Trace(Layer):
 
     @asynccontextmanager
     async def scope(self, run):
-        with run.recorder.span(run.run_id, "agent.context_demo", "agent"), sdk_tracing(run.recorder):
+        with recorded_trace(run.recorder, run.run_id, "agent.context_demo"):
             yield
 
 
@@ -71,13 +70,14 @@ class Budget(Layer):
         return {"name": self.name, **asdict(self)}
 
     def configure(self, run):
+        run.active_budget = ActiveBudget(self.seconds)
         run.max_model_calls, run.max_tool_calls = self.model_calls, self.tool_calls
         run.limits.update(max_iterations=self.model_calls, max_function_calls=self.tool_calls,
                           max_duration_seconds=self.seconds)
 
     @asynccontextmanager
     async def scope(self, run):
-        async with asyncio.timeout(self.seconds):
+        async with run.active_budget.measure():
             yield
 
 
