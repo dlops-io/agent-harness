@@ -21,13 +21,14 @@ from formaggio.shop.data_models import CartProposal, WorkflowOutcome, WorkflowSt
 class AgentProposer:
     """A fresh proposal session for each revision; approval never enters its tool set.
 
-    Act 6 still uses the standalone defaults until its migration. Act 3 supplies
-    invocation-local controls and measures active time at the workflow boundary.
+    Act adapters supply invocation-local controls and measure active time at
+    their execution boundary. A caller may also cap each proposal individually.
     """
-    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state=None):
+    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state=None, proposal_timeout=None):
         self.recorder, self.run_id, self.prompt, self.model = recorder, run_id, prompt, model
         self.api_client, self.api, self.owned, self.client = api_client, None, False, None
         self.execution_state = execution_state
+        self.proposal_timeout = 120 if execution_state is None else proposal_timeout
         self.trace = ModelTrace(recorder, run_id, progress, model=model, label="Cart proposer")
 
     async def __call__(self, state, packet):
@@ -45,7 +46,7 @@ class AgentProposer:
             feedback = {"previous_proposal": [i.model_dump() for i in state.items],
                         "validation": state.report.model_dump(mode="json")}
             message += "\nRevise the complete cart using this validation feedback:\n" + json.dumps(feedback)
-        async with asyncio.timeout(120) if self.execution_state is None else nullcontext():
+        async with asyncio.timeout(self.proposal_timeout):
             result = await agent.run(message, session=agent.create_session())
         return result.value if isinstance(result.value, CartProposal) else CartProposal.model_validate_json(result.text)
 

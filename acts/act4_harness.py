@@ -5,7 +5,7 @@ from formaggio.agents.context import load_scenario
 from formaggio.agents.harness_state import no_post_turn_compaction
 from formaggio.agents.planner_layers import Compaction, Memory, PlannerBudget, PlannerTrace, Planning
 from formaggio.agents.planner_runtime import PlannerHarness
-# Compatibility imports used by Act 6 and existing callers.
+# Compatibility imports for existing callers.
 from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES, build_event_tools
 from formaggio.agents.planner_review import run_with_review
 from formaggio.agents.runtime import MODEL_OPTIONS

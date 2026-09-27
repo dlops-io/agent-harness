@@ -157,3 +157,41 @@ class NotebookTests(RecordingTest):
         self.assertFalse(list(self.root.rglob("*.html")))
         self.assertEqual(len(clients), 4)
         self.assertTrue(all(api.is_closed() for api in clients))
+
+    def test_act6_lesson_cells_execute_offline_with_mandatory_workflow_boundaries(self):
+        from formaggio.fixtures.composition_fixture import CompositionFixture
+        notebook = json.loads((ROOT / "notebooks/act_6.ipynb").read_text())
+        namespace, clients = {}, []
+        original = CompositionFixture.client
+        def client(fixture):
+            value = original(fixture)
+            clients.append(value)
+            return value
+        async def execute():
+            for index, cell in enumerate(notebook["cells"]):
+                if cell["cell_type"] != "code":
+                    continue
+                self.assertEqual(cell["outputs"], [])
+                compiled = compile("".join(cell["source"]), f"act6-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                if "lesson" not in cell["metadata"].get("tags", []):
+                    continue
+                value = eval(compiled, namespace)
+                if inspect.isawaitable(value):
+                    await value
+                namespace["DB_PATH"] = self.root / "act6_notebook.sqlite"
+        with patch.object(CompositionFixture, "client", client), \
+             patch("formaggio.agents.composition_runtime.AsyncOpenAI", side_effect=AssertionError("Offline outer called live API")), \
+             patch("formaggio.agents.workflow_runtime.AsyncOpenAI", side_effect=AssertionError("Offline inner called live API")), \
+             redirect_stdout(io.StringIO()):
+            asyncio.run(execute())
+        self.assertEqual(namespace["result"]["orders"][0]["status"], "placed")
+        for name in ("declined_result", "minimal_result"):
+            self.assertEqual(namespace[name]["orders"][0]["status"], "declined")
+            self.assertFalse(namespace[name]["order_placed"])
+        self.assertEqual(namespace["minimal_result"]["tasks"], [])
+        self.assertEqual(namespace["minimal_result"]["skills_loaded"], [])
+        self.assertEqual([o["status"] for o in namespace["competing_result"]["orders"]], ["placed", "blocked"])
+        self.assertEqual([s["status"] for s in namespace["states"]], ["pending_approval", "pending_approval", "placed", "blocked"])
+        self.assertEqual(namespace["competing_result"]["workflow_model_calls"], 0)
+        self.assertEqual(len(clients), 4)
+        self.assertTrue(all(api.is_closed() for api in clients))

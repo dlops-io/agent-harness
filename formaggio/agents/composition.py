@@ -3,6 +3,7 @@
 One handle per confirmed request prevents accidental duplicate orders. Pending
 SDK workflows stay in memory. Only the host can resume them with a decision.
 """
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from uuid import uuid4
 
@@ -25,7 +26,7 @@ class OrderHandle:
 
 
 class WorkflowOrders:
-    def __init__(self, checkout, requests, proposers, recorder, run_id, *, progress=None, decision_source="human"):
+    def __init__(self, checkout, requests, proposers, recorder, run_id, *, progress=None, decision_source="human", trace_enabled=True):
         if not 1 <= len(requests) <= 2 or set(requests) != set(proposers):
             raise ValueError("Provide one or two confirmed requests and matching proposers.")
         if len({r.customer_id for r in requests.values()}) != 1:
@@ -33,6 +34,7 @@ class WorkflowOrders:
         self.checkout, self.requests, self.proposers = checkout, dict(requests), dict(proposers)
         self.recorder, self.run_id, self.progress = recorder, run_id, progress
         self.decision_source, self.handles = decision_source, {}
+        self.trace_enabled = trace_enabled
 
     def scoped(self, request_id):
         gate = Governance(self.recorder, self.run_id)
@@ -95,10 +97,11 @@ class WorkflowOrders:
         workflow = build_workflow(self.checkout, self.recorder, self.run_id, self.proposers[request_id],
                                   progress=self.progress, decision_source=self.decision_source)
         handle = OrderHandle(request_id, workflow)
-        with self.recorder.span(self.run_id, "workflow.order", "workflow") as span:
-            handle.origin = span.get_span_context()
-            span.set_attribute("formaggio.workflow_id", handle.checkout_key)
-            span.set_attribute("formaggio.request_id", request_id)
+        with (self.recorder.span(self.run_id, "workflow.order", "workflow") if self.trace_enabled else nullcontext()) as span:
+            if span is not None:
+                handle.origin = span.get_span_context()
+                span.set_attribute("formaggio.workflow_id", handle.checkout_key)
+                span.set_attribute("formaggio.request_id", request_id)
             self.recorder.event(self.run_id, "composition.started", {"request_id": request_id,
                 "workflow_id": handle.checkout_key, "request": self.requests[request_id].model_dump(mode="json")})
             self.handles[request_id] = handle
@@ -119,9 +122,10 @@ class WorkflowOrders:
         if ticket.ticket_id != ticket_id or decision not in {"approve", "decline"}:
             raise PolicyBlocked("Decision does not match this pending ticket.")
         # Resume under the original workflow span, even after its tool call ended.
-        with trace.use_span(trace.NonRecordingSpan(handle.origin), end_on_exit=False):
-            with self.recorder.span(self.run_id, "workflow.resume", "workflow") as span:
-                span.set_attribute("formaggio.workflow_id", handle.checkout_key)
+        with trace.use_span(trace.NonRecordingSpan(handle.origin), end_on_exit=False) if handle.origin else nullcontext():
+            with (self.recorder.span(self.run_id, "workflow.resume", "workflow") if self.trace_enabled else nullcontext()) as span:
+                if span is not None:
+                    span.set_attribute("formaggio.workflow_id", handle.checkout_key)
                 self.recorder.event(self.run_id, "composition.resuming", {"request_id": request_id,
                     "workflow_id": handle.checkout_key, "response_id": response_id, "ticket_id": ticket_id})
                 return await self.advance(handle, handle.workflow.run(stream=True, responses={response_id: decision}))

@@ -52,7 +52,7 @@ The Docker image installs Python 3.13 and the dependencies declared in `pyprojec
 
 ### Notebook path for Acts 1–2
 
-Open [the Acts 1–2 notebook](notebooks/acts_1_2.ipynb) in Jupyter or a Colab runtime with **Python 3.13 or newer**, matching this project's declared requirement. The notebook checks the active kernel version before installing dependencies; installing another Python executable alone does not change the notebook kernel. Colab runtime compatibility has not been validated here.
+Open [the Acts 1–2 notebook](notebooks/act_1_2.ipynb) in Jupyter or a Colab runtime with **Python 3.13 or newer**, matching this project's declared requirement. The notebook checks the active kernel version before installing dependencies; installing another Python executable alone does not change the notebook kernel. Colab runtime compatibility has not been validated here.
 
 The notebook finds or clones this repository, installs the pinned dependencies from `pyproject.toml` into the active kernel, and provides separate cells for:
 
@@ -211,7 +211,7 @@ For example, `harness.without("cart_check")` returns a separate configuration; u
 
 `CartCheck` reports the supplied cart and never repairs it or authorizes checkout. Required tool audit checks remain runtime responsibilities, independent of optional telemetry. The result retains the existing fields and adds `cart_check_status`: `passed`, `failed`, `no_cart`, or `not_run`.
 
-This layer API currently covers **Acts 1–2**. Later acts keep their existing workflow and harness implementations.
+All six acts use explicit `.run(...)` calls and named layers. Each act keeps its own agent or workflow definition and mandatory domain checks; the later sections show their builders.
 
 ### Try a variation
 
@@ -508,6 +508,21 @@ Customer assistant / harness
 
 ### Run Act 6
 
+**Notebook:** [Act 6: compose an assistant with a governed workflow](notebooks/act_6.ipynb).
+
+```python
+from acts.act6_composition import build_act6
+from formaggio.operations.observability import Recorder
+
+lesson = build_act6(fixture=True)
+with Recorder("outputs/act6_notebook.sqlite") as recorder:
+    result = await lesson.run(recorder, progress=print)
+```
+
+Read `build_order_tools` to see the narrow request-ID interface, then `build_assistant` and `build_act6` to see the agent and its named layers: `CompositionTrace`, `CompositionBudget`, `Planning`, `Compaction`, and `Skills`. Use `lesson.without("skills")` or another layer name to compare behavior. Workflow validation, request scope, approval, checkout, and current application state remain mandatory.
+
+Each run creates fresh workflow handles and inventory unless the host explicitly passes a shared `checkout`. The default budget allows 16 outer model calls, 20 outer tool calls, and 8 proposer calls per workflow. Its 180-second active timer covers outer execution, nested workflows, and host resumes, with a separate 120-second cap on each proposal. Manager waits consume none of this active time and do not reset call counts.
+
 **Live:**
 
 ```bash
@@ -533,7 +548,7 @@ This will demonstrate:
 - Shared resource constraints across otherwise valid requests.
 - A distinction between approval and successful placement.
 
-**Code to read:** [act6_composition.py](acts/act6_composition.py) and [composition.py](formaggio/agents/composition.py).
+**Code to read:** [act6_composition.py](acts/act6_composition.py) defines the agent and tools; [composition_runtime.py](formaggio/agents/composition_runtime.py) owns invocation state; [composition.py](formaggio/agents/composition.py) owns workflow handles; [composition_review.py](formaggio/agents/composition_review.py) drives host review and resume.
 
 **Checkpoint:** Explain why invoking a governed workflow as a tool is useful, and why two approvals do not guarantee two successful orders.
 
@@ -639,6 +654,7 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 | [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
 | [Act 3 workflow harness](formaggio/agents/workflow_runtime.py) and [layers](formaggio/agents/workflow_layers.py) | Graph execution, manager pause/resume, and cumulative active budgets |
 | [Acts 4–5 planner harness](formaggio/agents/planner_runtime.py) and [layers](formaggio/agents/planner_layers.py) | Planning, memory, optional compaction, and mandatory host review |
+| [Act 6 composition harness](formaggio/agents/composition_runtime.py) and [layers](formaggio/agents/composition_layers.py) | Outer assistant, per-workflow proposers, shared active time, and host-controlled resumes |
 | [Skills layer](formaggio/agents/skill_layer.py) and [skill access](formaggio/agents/skill_support.py) | Per-run snapshots, native discovery, and governed resource loading |
 | [Shared execution](formaggio/agents/execution.py) | Per-run counters, active time, resource cleanup, final status, and tracing scopes |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
@@ -652,9 +668,9 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 
 ### Shared execution groundwork
 
-Acts 1–5 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
+Acts 1–6 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
 
-Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Acts 3–5 leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Acts 4–5 share the planner runtime, with Act 5 adding the Skills layer. Act 6 retains its driver and continues to reuse the workflow and planner support interfaces.
+Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Acts 3–6 leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Acts 4–5 share the planner runtime, with Act 5 adding the Skills layer. Act 6 uses its composition runtime, reusing the workflow proposer, task, skill, and application-context support. Its outer and inner agents keep separate call counters while sharing the outer active-time boundary.
 
 `RecordedExecution` closes explicitly owned resources before recording completion, leaves borrowed clients with their caller, and records errors or cancellation. If cleanup or finalization also fails, the original exception is preserved with a diagnostic note. A recording failure still propagates; it cannot guarantee a persisted terminal status when storage is unavailable.
 
