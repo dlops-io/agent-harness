@@ -50,3 +50,33 @@ class NotebookTests(RecordingTest):
         self.assertEqual(comparison["basic"]["context"]["sources"], [])
         self.assertTrue(comparison["enriched"]["context"]["sources"])
         self.assertNotIn("unit-test-credential", output.getvalue())
+
+    def test_act3_lesson_cells_execute_offline_with_required_checks(self):
+        notebook = json.loads((ROOT / "notebooks/act_3.ipynb").read_text())
+        namespace = {}
+        async def execute():
+            for index, cell in enumerate(notebook["cells"]):
+                if cell["cell_type"] != "code":
+                    continue
+                self.assertEqual(cell["outputs"], [])
+                source = "".join(cell["source"])
+                compiled = compile(source, f"act3-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                if "lesson" not in cell["metadata"].get("tags", []):
+                    continue
+                value = eval(compiled, namespace)
+                if inspect.isawaitable(value):
+                    await value
+                namespace["DB_PATH"] = self.root / "act3_notebook.sqlite"
+        output = io.StringIO()
+        with patch("formaggio.agents.workflow_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called API")), \
+             redirect_stdout(output):
+            asyncio.run(execute())
+        for name in ("result", "result_without_trace", "approval_result"):
+            result = namespace[name]
+            self.assertEqual(result["outcome"].status, "placed")
+            self.assertEqual(result["mode"], "fixture")
+            self.assertEqual(result["model_calls"], 0)
+        self.assertEqual(namespace["result"]["outcome"].attempts, 2)
+        self.assertEqual(namespace["result_without_trace"]["outcome"].attempts, 2)
+        self.assertIsNotNone(namespace["approval_result"]["outcome"].receipt.approval_ticket_id)
+        self.assertIn("validate_and_price", output.getvalue())

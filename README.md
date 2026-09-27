@@ -312,7 +312,33 @@ python cli.py --act 3 --fixture --scenario out-of-stock
 
 Look for an initial stock violation followed by a revised valid cart. Pairings should correspond to the accepted cart.
 
-**Code to read:** [act3_workflow.py](acts/act3_workflow.py), [store.py](formaggio/shop/store.py), and [checkout.py](formaggio/shop/checkout.py).
+**Notebook:** [Act 3: a workflow and its harness](notebooks/act_3.ipynb). Use top-level `await` in notebook cells:
+
+```python
+from acts.act3_workflow import build_act3
+from cli import print_workflow_result
+from formaggio.operations.observability import Recorder
+
+lesson = build_act3(fixture=True, scenario="out-of-stock")
+with Recorder("outputs/notebook.sqlite") as recorder:
+    result = await lesson.run(recorder, progress=print)
+print_workflow_result(result)
+```
+
+The fixed proposals make the revision path repeatable without a model API. For a live proposing agent, use `build_act3(model=MODEL)` and configure your API key as in Acts 1–2. For a manager scenario, pass an async `manager(ticket)` callback; the notebook shows both an explicit fixture decision and an interactive review.
+
+**Concept: separate the workflow from its harness.** `build_workflow(...)` shows the required nodes and transitions. `build_act3(...)` adds two named execution layers:
+
+| Layer | What it adds | Experiment |
+|---|---|---|
+| `WorkflowTrace()` | Model request/response records and native workflow spans | `lesson.without("trace")` removes detailed telemetry; required workflow and policy events remain |
+| `WorkflowBudget(model_calls=8, seconds=120)` | A cumulative model-call limit and active execution timer | `lesson.without("budget")` removes these explicit limits; graph revision bounds and the SDK loop fallback remain |
+
+Each `.run(...)` creates fresh workflow, checkout, client, counter, and timer state. An explicitly injected checkout can be shared when coordinating multiple orders. Layer configurations are immutable; `.add(...)` and `.without(...)` return a new configuration.
+
+The active timer covers initial execution and resumed segments together, excluding manager wait time. This replaces the previous separate 120-second timeout on each proposal. Mandatory validation, customer authorization, manager approval, and final revalidation are graph/checkout rules, so neither layer can remove them.
+
+**Code to read:** [act3_workflow.py](acts/act3_workflow.py) for the graph and lesson API; [workflow_steps.py](formaggio/agents/workflow_steps.py) for the required steps; [workflow_layers.py](formaggio/agents/workflow_layers.py) and [workflow_runtime.py](formaggio/agents/workflow_runtime.py) for named features and execution; [checkout.py](formaggio/shop/checkout.py) for the final action boundary.
 
 **Checkpoint:** Identify what an approval is bound to and why checkout must revalidate after a human pause.
 
@@ -552,6 +578,7 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 |---|---|
 | [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
 | [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
+| [Act 3 workflow harness](formaggio/agents/workflow_runtime.py) and [layers](formaggio/agents/workflow_layers.py) | Graph execution, manager pause/resume, and cumulative active budgets |
 | [Shared execution](formaggio/agents/execution.py) | Per-run counters, active time, resource cleanup, final status, and tracing scopes |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
@@ -564,9 +591,9 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 
 ### Shared execution groundwork
 
-Acts 1–2 use the shared execution module through their harness and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
+Acts 1–3 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
 
-Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments; a future workflow adapter can leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 currently use one continuous segment. Acts 3–6 retain their existing implementations until their individual migrations.
+Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Act 3 leaves manager review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Acts 4–6 retain their existing harness implementations until their individual migrations; Act 6 continues to reuse the Act 3 graph and proposer interfaces.
 
 `RecordedExecution` closes explicitly owned resources before recording completion, leaves borrowed clients with their caller, and records errors or cancellation. If cleanup or finalization also fails, the original exception is preserved with a diagnostic note. A recording failure still propagates; it cannot guarantee a persisted terminal status when storage is unavailable.
 
