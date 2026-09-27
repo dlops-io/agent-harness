@@ -50,18 +50,21 @@ The acts are separate demonstrations. Follow them in order to learn, but do not 
 
 The Docker image installs Python 3.13 and the dependencies declared in `pyproject.toml` and `uv.lock`.
 
-### Notebook path for Acts 1–2
+### Notebook path for Acts 1–6
 
-Open [the Acts 1–2 notebook](notebooks/act_1_2.ipynb) in Jupyter or a Colab runtime with **Python 3.13 or newer**, matching this project's declared requirement. The notebook checks the active kernel version before installing dependencies; installing another Python executable alone does not change the notebook kernel. Colab runtime compatibility has not been validated here.
+The notebooks contain the lesson cells tested in Colab, with short explanations and imports grouped above the lessons:
 
-The notebook finds or clones this repository, installs the pinned dependencies from `pyproject.toml` into the active kernel, and provides separate cells for:
+- [Acts 1–2: build an agent, add harness layers, and compare context](notebooks/act_1_2.ipynb)
+- [Act 3: control ordering with a workflow](notebooks/act_3.ipynb)
+- [Act 4: manage a longer task with a planning agent](notebooks/act_4.ipynb)
+- [Act 5: load reusable skills when needed](notebooks/act_5.ipynb)
+- [Act 6: connect an assistant to the ordering workflow](notebooks/act_6.ipynb)
 
-1. Running a normal SDK `Agent` with shop instructions and tools.
-2. Running the same agent definition through named harness layers.
-3. Removing a layer and observing the difference.
-4. Comparing basic and enriched context in Act 2.
+Each notebook can run independently in Jupyter or Colab with a **Python 3.13+ kernel**. Its setup finds or clones this repository and installs the pinned direct dependencies from `pyproject.toml`. If your Colab setup already handles this, skip the repository and installation cells and run the imports and settings from the repository directory. Installing another Python executable alone does not change the active notebook kernel.
 
-The lesson cells use top-level `await`, so no `asyncio.run()` or event-loop patching is needed. Use a repository revision containing the notebook and layer refactor. Model execution cells make live API calls; the test suite uses local HTTP fixtures.
+Live model calls are enabled by default. Set `USE_FIXTURES = True` for scripted responses in Acts 3–6; Acts 1–2 still use live calls. An existing `OPENAI_API_KEY` is reused, or the credential cell prompts privately when needed. Review callbacks ask you to approve or decline simulated checkout or a local HTML email save. No real purchase or email is sent.
+
+The lesson cells use top-level `await`, so no `asyncio.run()` or event-loop patching is needed. Run `python -m tests -p test_notebook.py` to execute the saved lesson cells using local responses and temporary output files. The tests skip cloning, installation, and credentials, and cover both approval decisions. Run `python -m tests` for all offline checks.
 
 ### Start the container
 
@@ -325,7 +328,7 @@ with Recorder("outputs/notebook.sqlite") as recorder:
 print_workflow_result(result)
 ```
 
-The fixed proposals make the revision path repeatable without a model API. For a live proposing agent, use `build_act3(model=MODEL)` and configure your API key as in Acts 1–2. For a manager scenario, pass an async `manager(ticket)` callback; the notebook shows both an explicit fixture decision and an interactive review.
+The fixed proposals make the revision path repeatable without a model API. For a live proposing agent, use `build_act3(model=MODEL)` and configure your API key as in Acts 1–2. For a manager scenario, pass an async `manager(ticket)` callback; the notebook uses an interactive review with either live or scripted model responses.
 
 **Concept: separate the workflow from its harness.** `build_workflow(...)` shows the required nodes and transitions. `build_act3(...)` adds two named execution layers:
 

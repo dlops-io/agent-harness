@@ -1,197 +1,176 @@
-"""Run the actual lesson cells with local model responses, without installing or cloning."""
+"""Execute the saved Colab lesson cells offline; skip install, clone and credentials."""
 import ast
 import asyncio
-from contextlib import redirect_stdout
+from contextlib import ExitStack, chdir, redirect_stdout
 import inspect
 import io
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from formaggio.config import ROOT
+from formaggio.fixtures.harness_fixture import HarnessFixture
 from tests.support import RecordingTest
 from tests.test_context import ScriptedResponses
 from tests.test_layers import local_api
 
 
+NOTEBOOKS = ("act_1_2.ipynb", "act_3.ipynb", "act_4.ipynb", "act_5.ipynb", "act_6.ipynb")
+
+
 class NotebookTests(RecordingTest):
-    def test_lesson_cells_execute_with_local_responses_and_keep_agent_definition_equivalent(self):
-        notebook = json.loads((ROOT / "notebooks/act_1_2.ipynb").read_text())
-        namespace, clients, backends = {"Path": Path}, [], []
-        def client_factory(*args, **kwargs):
+    def notebook(self, name):
+        return json.loads((ROOT / "notebooks" / name).read_text())
+
+    def execute_notebook(self, name, *, decision="approve"):
+        namespace, clients, backends = {}, [], []
+        output = io.StringIO()
+        original_client = HarnessFixture.client
+
+        def model_client(*args, **kwargs):
             backend = ScriptedResponses()
             api = local_api(backend)
-            clients.append(api)
             backends.append(backend)
+            clients.append(api)
             return api
+
+        def fixture_client(fixture):
+            api = original_client(fixture)
+            clients.append(api)
+            return api
+
         async def execute():
-            for index, cell in enumerate(notebook["cells"]):
-                if cell["cell_type"] != "code" or "lesson" not in cell["metadata"].get("tags", []):
+            for index, cell in enumerate(self.notebook(name)["cells"]):
+                tags = cell["metadata"].get("tags", [])
+                if cell["cell_type"] != "code" or not set(tags) & {"imports", "settings", "lesson"}:
                     continue
-                self.assertEqual(cell["outputs"], [])
-                source = "".join(cell["source"])
-                compiled = compile(source, f"notebook-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                compiled = compile("".join(cell["source"]), f"{name}:cell-{index}", "exec",
+                                   flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 value = eval(compiled, namespace)
                 if inspect.isawaitable(value):
                     await value
-                # Keep notebook DB writes temporary and the model explicitly labeled.
-                namespace["DB_PATH"] = self.root / "notebook.sqlite"
-                namespace["MODEL"] = "fixture-model"
-        output = io.StringIO()
-        with patch("openai.AsyncOpenAI", side_effect=client_factory), \
-             patch("formaggio.agents.harness.AsyncOpenAI", side_effect=client_factory), redirect_stdout(output):
+                if "imports" in tags:
+                    # Replace only the notebook's client; do not patch openai globally,
+                    # since the later acts' fixtures construct their own local clients.
+                    namespace["AsyncOpenAI"] = model_client
+                    namespace["MODEL"] = "fixture-model"
+                if "settings" in tags:
+                    namespace["USE_FIXTURES"] = True
+
+        run_root = self.root / name / decision
+        run_root.mkdir(parents=True)
+        with ExitStack() as stack:
+            stack.enter_context(chdir(run_root))
+            stack.enter_context(redirect_stdout(output))
+            stack.enter_context(patch("formaggio.agents.harness.AsyncOpenAI", side_effect=model_client))
+            stack.enter_context(patch.object(HarnessFixture, "client", fixture_client))
+            for module in ("workflow_runtime", "planner_runtime", "composition_runtime"):
+                stack.enter_context(patch(f"formaggio.agents.{module}.AsyncOpenAI",
+                                          side_effect=AssertionError("Notebook attempted a live API call")))
+            # Exercise the real callback, including its invalid-answer retry.
+            review = stack.enter_context(patch("builtins.input", side_effect=["invalid", decision]))
             asyncio.run(execute())
-        self.assertEqual(len(backends), 5)
         self.assertTrue(all(api.is_closed() for api in clients))
-        for backend in backends[1:4]:
-            self.assertEqual(backend.requests, backends[0].requests)
-        self.assertEqual(namespace["result_without_check"]["cart_check_status"], "not_run")
-        comparison = namespace["context_results"]
-        self.assertEqual(comparison["basic"]["context"]["sources"], [])
-        self.assertTrue(comparison["enriched"]["context"]["sources"])
         self.assertNotIn("unit-test-credential", output.getvalue())
+        self.assertNotIn("local-fixture-key", output.getvalue())
+        return namespace, backends, output.getvalue(), review
 
-    def test_act3_lesson_cells_execute_offline_with_required_checks(self):
-        notebook = json.loads((ROOT / "notebooks/act_3.ipynb").read_text())
-        namespace = {}
-        async def execute():
-            for index, cell in enumerate(notebook["cells"]):
-                if cell["cell_type"] != "code":
-                    continue
-                self.assertEqual(cell["outputs"], [])
-                source = "".join(cell["source"])
-                compiled = compile(source, f"act3-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                if "lesson" not in cell["metadata"].get("tags", []):
-                    continue
-                value = eval(compiled, namespace)
-                if inspect.isawaitable(value):
-                    await value
-                namespace["DB_PATH"] = self.root / "act3_notebook.sqlite"
-        output = io.StringIO()
-        with patch("formaggio.agents.workflow_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called API")), \
-             redirect_stdout(output):
-            asyncio.run(execute())
-        for name in ("result", "result_without_trace", "approval_result"):
-            result = namespace[name]
-            self.assertEqual(result["outcome"].status, "placed")
-            self.assertEqual(result["mode"], "fixture")
-            self.assertEqual(result["model_calls"], 0)
-        self.assertEqual(namespace["result"]["outcome"].attempts, 2)
-        self.assertEqual(namespace["result_without_trace"]["outcome"].attempts, 2)
-        self.assertIsNotNone(namespace["approval_result"]["outcome"].receipt.approval_ticket_id)
-        self.assertIn("validate_and_price", output.getvalue())
+    def test_notebooks_keep_imports_at_top_and_share_settings_without_saved_outputs(self):
+        shared = {}
+        for name in NOTEBOOKS:
+            with self.subTest(notebook=name):
+                notebook = self.notebook(name)
+                self.assertEqual(notebook["nbformat"], 4)
+                lesson_seen = False
+                for index, cell in enumerate(notebook["cells"]):
+                    if cell["cell_type"] != "code":
+                        continue
+                    self.assertEqual(cell["outputs"], [])
+                    self.assertIsNone(cell["execution_count"])
+                    source = "".join(cell["source"])
+                    compile(source, f"{name}:cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                    tags = cell["metadata"]["tags"]
+                    if "lesson" in tags:
+                        lesson_seen = True
+                    imports = [node for node in ast.walk(ast.parse(source))
+                               if isinstance(node, (ast.Import, ast.ImportFrom))]
+                    if imports:
+                        self.assertFalse(lesson_seen)
+                        self.assertTrue(set(tags) & {"setup", "imports"})
+                    for tag in ("imports", "settings"):
+                        if tag in tags:
+                            self.assertEqual(source, shared.setdefault(tag, source))
+                self.assertTrue(lesson_seen)
 
-    def test_act4_lesson_cells_execute_offline_and_preserve_decline_without_layers(self):
-        from formaggio.fixtures.harness_fixture import HarnessFixture
-        notebook = json.loads((ROOT / "notebooks/act_4.ipynb").read_text())
-        namespace, clients = {}, []
-        original = HarnessFixture.client
-        def client(fixture):
-            value = original(fixture)
-            clients.append(value)
-            return value
-        async def execute():
-            for index, cell in enumerate(notebook["cells"]):
-                if cell["cell_type"] != "code":
-                    continue
-                self.assertEqual(cell["outputs"], [])
-                compiled = compile("".join(cell["source"]), f"act4-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                if "lesson" not in cell["metadata"].get("tags", []):
-                    continue
-                value = eval(compiled, namespace)
-                if inspect.isawaitable(value):
-                    await value
-                namespace["DB_PATH"] = self.root / "act4_notebook.sqlite"
-                namespace["OUTPUT_ROOT"] = self.root / "artifacts"
-        with patch.object(HarnessFixture, "client", client), \
-             patch("formaggio.agents.planner_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called live API")), \
-             redirect_stdout(io.StringIO()):
-            asyncio.run(execute())
-        for name in ("result", "minimal_result", "uncompacted_result", "compacted_result"):
-            result = namespace[name]
-            self.assertEqual(result["status"], "declined")
-            self.assertEqual(result["artifacts"], [])
-            self.assertTrue(result["scripted"])
-        self.assertEqual(namespace["minimal_result"]["tasks"], [])
-        self.assertEqual(namespace["minimal_result"]["preferences"], [])
-        self.assertEqual(namespace["uncompacted_result"]["compactions"], 0)
-        self.assertGreater(namespace["compacted_result"]["compactions"], 0)
-        self.assertIn("decline", namespace["states"][-1]["email_decisions"].values())
-        self.assertEqual(len(clients), 4)
-        self.assertTrue(all(api.is_closed() for api in clients))
+    def test_acts_1_2_preserve_agent_requests_and_compare_context(self):
+        state, backends, output, review = self.execute_notebook("act_1_2.ipynb")
+        self.assertEqual(len(backends), 4)
+        for backend in backends[1:3]:
+            self.assertEqual(backend.requests, backends[0].requests)
+        self.assertNotEqual(backends[2].requests, backends[3].requests)
+        self.assertEqual(state["act1_result"]["cart_check_status"], "passed")
+        results = state["context_results"]
+        self.assertEqual(results["basic"]["context"]["sources"], [])
+        self.assertTrue(results["enriched"]["context"]["sources"])
+        for result in results.values():
+            self.assertEqual(result["cart_check_status"], "passed")
+        self.assertIn("Customer ask", output)
+        self.assertIn("Comparison", output)
+        review.assert_not_called()
 
-    def test_act5_lesson_cells_execute_offline_with_progressive_loading_and_template_gate(self):
-        from formaggio.fixtures.skills_fixture import SkillsFixture
-        notebook = json.loads((ROOT / "notebooks/act_5.ipynb").read_text())
-        namespace, clients = {}, []
-        original = SkillsFixture.client
-        def client(fixture):
-            value = original(fixture)
-            clients.append(value)
-            return value
-        async def execute():
-            for index, cell in enumerate(notebook["cells"]):
-                if cell["cell_type"] != "code":
-                    continue
-                self.assertEqual(cell["outputs"], [])
-                compiled = compile("".join(cell["source"]), f"act5-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                if "lesson" not in cell["metadata"].get("tags", []):
-                    continue
-                value = eval(compiled, namespace)
-                if inspect.isawaitable(value):
-                    await value
-                namespace["DB_PATH"] = self.root / "act5_notebook.sqlite"
-                namespace["OUTPUT_ROOT"] = self.root / "artifacts"
-        with patch.object(SkillsFixture, "client", client), \
-             patch("formaggio.agents.planner_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called live API")), \
-             redirect_stdout(io.StringIO()):
-            asyncio.run(execute())
-        self.assertEqual(namespace["stock_result"]["status"], "answered")
-        self.assertEqual(namespace["stock_result"]["skills_loaded"], [])
-        self.assertEqual(namespace["tasting_result"]["status"], "plan_proposed")
-        self.assertEqual(namespace["tasting_result"]["skills_loaded"], ["tasting-planning"])
-        self.assertEqual(namespace["outreach_result"]["status"], "declined")
-        self.assertEqual(len(namespace["outreach_result"]["skill_resources"]), 4)
-        self.assertEqual(namespace["without_skills_result"]["status"], "blocked")
-        self.assertEqual(namespace["without_skills_result"]["skills_loaded"], [])
-        self.assertFalse(list(self.root.rglob("*.html")))
-        self.assertEqual(len(clients), 4)
-        self.assertTrue(all(api.is_closed() for api in clients))
+    def test_act3_requires_review_and_preserves_both_decisions(self):
+        for decision, expected in (("approve", "placed"), ("decline", "declined")):
+            with self.subTest(decision=decision):
+                state, _, output, review = self.execute_notebook("act_3.ipynb", decision=decision)
+                result = state["act3_result"]
+                self.assertEqual(result["outcome"].status, expected)
+                self.assertEqual(result["mode"], "fixture")
+                self.assertEqual(result["model_calls"], 0)
+                if decision == "approve":
+                    self.assertIsNotNone(result["outcome"].receipt.approval_ticket_id)
+                else:
+                    self.assertIsNone(result["outcome"].receipt)
+                self.assertEqual(review.call_count, 2)
+                self.assertIn("Manager review", output)
+                self.assertIn("Please enter approve or decline.", output)
 
-    def test_act6_lesson_cells_execute_offline_with_mandatory_workflow_boundaries(self):
-        from formaggio.fixtures.composition_fixture import CompositionFixture
-        notebook = json.loads((ROOT / "notebooks/act_6.ipynb").read_text())
-        namespace, clients = {}, []
-        original = CompositionFixture.client
-        def client(fixture):
-            value = original(fixture)
-            clients.append(value)
-            return value
-        async def execute():
-            for index, cell in enumerate(notebook["cells"]):
-                if cell["cell_type"] != "code":
-                    continue
-                self.assertEqual(cell["outputs"], [])
-                compiled = compile("".join(cell["source"]), f"act6-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                if "lesson" not in cell["metadata"].get("tags", []):
-                    continue
-                value = eval(compiled, namespace)
-                if inspect.isawaitable(value):
-                    await value
-                namespace["DB_PATH"] = self.root / "act6_notebook.sqlite"
-        with patch.object(CompositionFixture, "client", client), \
-             patch("formaggio.agents.composition_runtime.AsyncOpenAI", side_effect=AssertionError("Offline outer called live API")), \
-             patch("formaggio.agents.workflow_runtime.AsyncOpenAI", side_effect=AssertionError("Offline inner called live API")), \
-             redirect_stdout(io.StringIO()):
-            asyncio.run(execute())
-        self.assertEqual(namespace["result"]["orders"][0]["status"], "placed")
-        for name in ("declined_result", "minimal_result"):
-            self.assertEqual(namespace[name]["orders"][0]["status"], "declined")
-            self.assertFalse(namespace[name]["order_placed"])
-        self.assertEqual(namespace["minimal_result"]["tasks"], [])
-        self.assertEqual(namespace["minimal_result"]["skills_loaded"], [])
-        self.assertEqual([o["status"] for o in namespace["competing_result"]["orders"]], ["placed", "blocked"])
-        self.assertEqual([s["status"] for s in namespace["states"]], ["pending_approval", "pending_approval", "placed", "blocked"])
-        self.assertEqual(namespace["competing_result"]["workflow_model_calls"], 0)
-        self.assertEqual(len(clients), 4)
-        self.assertTrue(all(api.is_closed() for api in clients))
+    def test_act4_reviews_email_and_saves_only_when_approved(self):
+        for decision, expected in (("approve", "saved"), ("decline", "declined")):
+            with self.subTest(decision=decision):
+                state, _, output, review = self.execute_notebook("act_4.ipynb", decision=decision)
+                result = state["act4_result"]
+                self.assertEqual(result["status"], expected)
+                self.assertTrue(result["scripted"])
+                self.assertEqual(bool(result["artifacts"]), decision == "approve")
+                artifacts = list((self.root / "act_4.ipynb" / decision).rglob("*.html"))
+                self.assertEqual(bool(artifacts), decision == "approve")
+                self.assertTrue(result["preferences"])
+                self.assertTrue(result["tasks"])
+                self.assertFalse(result["order_placed"])
+                self.assertFalse(result["email_transmitted"])
+                self.assertEqual(review.call_count, 2)
+                self.assertIn("Review this email draft", output)
+                self.assertIn("Subject:", output)
+
+    def test_act5_loads_skills_only_for_the_relevant_task(self):
+        state, _, output, review = self.execute_notebook("act_5.ipynb")
+        stock, tasting = (state["act5_results"][key] for key in ("stock-question", "tasting-plan"))
+        self.assertEqual(stock["status"], "answered")
+        self.assertEqual(stock["skills_loaded"], [])
+        self.assertEqual(tasting["status"], "plan_proposed")
+        self.assertEqual(tasting["skills_loaded"], ["tasting-planning"])
+        self.assertTrue(tasting["skill_resources"])
+        self.assertIn("Skills used", output)
+        review.assert_not_called()
+
+    def test_act6_checks_checkout_and_tasting_delivery_separately(self):
+        state, _, output, review = self.execute_notebook("act_6.ipynb")
+        result = state["act6_result"]
+        self.assertEqual(result["orders"][0]["status"], "placed")
+        self.assertIsNotNone(result["orders"][0]["receipt"])
+        self.assertTrue(result["order_placed"])
+        self.assertEqual(result["workflow_model_calls"], 0)
+        self.assertTrue(state["delivery_checks"])
+        self.assertTrue(state["delivery_checks"][-1]["ready"])
+        self.assertIn("tasting-planning", result["skills_loaded"])
+        self.assertIn("Ready: True", output)
+        review.assert_not_called()
