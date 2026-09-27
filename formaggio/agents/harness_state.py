@@ -65,24 +65,23 @@ class HarnessHistory(InMemoryHistoryProvider):
         await super().save_messages(session_id, clean, state=state, **kwargs)
 
 
-class HarnessCompaction:
-    """Native history eviction plus a fresh capsule of trusted application state.
+class ApplicationContext:
+    """Always refresh trusted application state; history eviction is optional.
 
-    The capsule is reconstructed, not an LLM-written summary. Only host-confirmed
-    constraints and current operational state are restored. Raw vendor text cannot
-    modify them. Character counts below are NOT provider token measurements.
+    The SDK invokes this adapter before every model call. Turning off history
+    compaction must not turn off confirmed constraints, review state or the cap.
     """
-    def __init__(self, recorder, run_id, capsule, *, progress=None):
+    def __init__(self, recorder, run_id, capsule, *, progress=None, native=None, details=True):
         self.recorder, self.run_id, self.capsule, self.progress = recorder, run_id, capsule, progress
-        self.native = ContextWindowCompactionStrategy(max_context_window_tokens=16000, max_output_tokens=2400,
-                                                      keep_last_tool_call_groups=1)
+        self.native = native
+        self.details = details
         self.count = 0
 
     async def __call__(self, messages):
         before = visible_messages(messages)
         # Replace previous capsules instead of letting copies grow with history.
         messages[:] = [m for m in messages if not m.additional_properties.get("formaggio_capsule")]
-        projected = await apply_compaction(messages, strategy=self.native)
+        projected = await apply_compaction(messages, strategy=self.native) if self.native is not None else list(messages)
         after_history = visible_messages(projected)
         changed = len(projected) < len(messages)
         messages[:] = projected
@@ -93,17 +92,25 @@ class HarnessCompaction:
         characters = len(json.dumps(after, ensure_ascii=False))
         if characters > 64000:
             raise MiddlewareFailure("Assembled message context exceeds the 64,000-character teaching cap.")
-        self.recorder.event(self.run_id, "context.model_input", {"messages": after,
+        self.recorder.event(self.run_id, "context.model_input", {**({"messages": after} if self.details else {}),
                             "characters": characters, "capsule": capsule})
         if changed:
             self.count += 1
             self.recorder.event(self.run_id, "compaction.applied", {"strategy": "ContextWindowCompactionStrategy",
-                "before": before, "after_history": after_history, "after": after,
+                **({"before": before, "after_history": after_history, "after": after} if self.details else {}),
                 "before_characters": len(json.dumps(before, ensure_ascii=False)), "after_characters": characters,
                 "restored_state": capsule})
             if self.progress:
                 self.progress(f"Compaction: {len(before)} → {len(after)} messages; confirmed constraints and open work restored.")
         return changed
+
+
+class HarnessCompaction(ApplicationContext):
+    """Compatibility default: trusted state plus native history eviction."""
+    def __init__(self, recorder, run_id, capsule, *, progress=None):
+        super().__init__(recorder, run_id, capsule, progress=progress,
+                         native=ContextWindowCompactionStrategy(max_context_window_tokens=16000,
+                             max_output_tokens=2400, keep_last_tool_call_groups=1))
 
 
 async def no_post_turn_compaction(messages):

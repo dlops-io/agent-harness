@@ -382,7 +382,37 @@ python cli.py --act 4 --customer shivas
 
 Compare the printed memory on the second visit. The host persists the explicitly supplied preference; the model has no memory-write tool. Default live preference memory survives across runs, while standalone fixtures use isolated memory unless you supply `--memory-db`.
 
-**Code to read:** [act4_harness.py](acts/act4_harness.py), [harness_state.py](formaggio/agents/harness_state.py), [governance.py](formaggio/operations/governance.py), and [vendor_outreach.py](formaggio/shop/vendor_outreach.py).
+**Notebook:** [Act 4: a planner and its harness](notebooks/act_4.ipynb). The lesson file now separates `build_planner(...)`, which constructs the SDK agent, from `build_act4(...)`, which adds named features:
+
+```python
+from acts.act4_harness import build_act4
+from cli import print_harness_result
+from formaggio.operations.observability import Recorder
+
+async def fixture_review(review):
+    return "decline"  # Explicit classroom decision; supplied by the host.
+
+lesson = build_act4(fixture=True, decision_source="fixture")
+with Recorder("outputs/notebook.sqlite") as recorder:
+    result = await lesson.run(recorder, reviewer=fixture_review, progress=print)
+print_harness_result(result)
+```
+
+| Layer | What it contributes | Removal experiment |
+|---|---|---|
+| `PlannerTrace()` | Detailed model/tool telemetry and native spans | `.without("trace")` retains required audit and current-state records |
+| `PlannerBudget(...)` | Model/tool admission limits and cumulative active time | `.without("budget")` removes explicit call/time budgets; the SDK loop fallback and context cap remain |
+| `Planning()` | Visible task tools and bounded session task state | `.without("planning")` removes task tools and their default prompt directions |
+| `Memory()` | Customer-scoped preference loading and host-confirmed persistence | `.without("memory")` opens no memory database; current confirmed preferences remain in the request |
+| `Compaction()` | Native eviction of older conversation history | `.without("compaction")` keeps history while still refreshing current application state |
+
+**Concept: context engineering and compaction have separate jobs.** Confirmed constraints, pending reviews, decisions and artifact state are reconstructed before each model call, including after a human pause. That refresh and the 64,000-character context cap remain active when compaction is removed. `demo_compaction=True` requires the Compaction layer because it deliberately seeds oversized synthetic history.
+
+Each `.run(...)` creates fresh tools, tasks, history, review state, clients and counters. Only explicitly selected persistent preference memory carries over; fixture runs use isolated memory by default. Model/tool allowances and active time persist across review resumes, while human wait time is excluded. The shared admission counter governs tool limits, avoiding the SDK's synthetic final response at its separate tool cap.
+
+Required tool auditing, customer boundaries, vendor-recipient policy and approval binding are not optional layers. A prior rejected action also cannot turn a later provider or audit failure into a normal blocked outcome.
+
+**Code to read:** [act4_harness.py](acts/act4_harness.py) for the planner and lesson API; [planner_layers.py](formaggio/agents/planner_layers.py) and [planner_runtime.py](formaggio/agents/planner_runtime.py) for features and execution; [planner_review.py](formaggio/agents/planner_review.py) for host review; [harness_state.py](formaggio/agents/harness_state.py) and [vendor_outreach.py](formaggio/shop/vendor_outreach.py) for state and protected actions.
 
 **Checkpoint:** Distinguish task state, conversation history, preference memory, approval state, and audit records. Which of these can authorize an action?
 
@@ -579,6 +609,7 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 | [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
 | [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
 | [Act 3 workflow harness](formaggio/agents/workflow_runtime.py) and [layers](formaggio/agents/workflow_layers.py) | Graph execution, manager pause/resume, and cumulative active budgets |
+| [Act 4 planner harness](formaggio/agents/planner_runtime.py) and [layers](formaggio/agents/planner_layers.py) | Planning, memory, optional compaction, and mandatory host review |
 | [Shared execution](formaggio/agents/execution.py) | Per-run counters, active time, resource cleanup, final status, and tracing scopes |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
@@ -591,9 +622,9 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 
 ### Shared execution groundwork
 
-Acts 1–3 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
+Acts 1–4 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
 
-Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Act 3 leaves manager review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Acts 4–6 retain their existing harness implementations until their individual migrations; Act 6 continues to reuse the Act 3 graph and proposer interfaces.
+Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Acts 3–4 leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Act 5 retains its existing driver in `planner_legacy.py` until its migration, using the shared planner tools and review interfaces. Act 6 retains its driver and continues to reuse the workflow and planner support interfaces.
 
 `RecordedExecution` closes explicitly owned resources before recording completion, leaves borrowed clients with their caller, and records errors or cancellation. If cleanup or finalization also fails, the original exception is preserved with a diagnostic note. A recording failure still propagates; it cannot guarantee a persisted terminal status when storage is unavailable.
 

@@ -6,25 +6,29 @@ from openai import AsyncOpenAI
 
 
 class HarnessFixture:
-    def __init__(self, recipient="vendor@example.com"):
+    def __init__(self, recipient="vendor@example.com", *, planning=True):
         self.requests, self.recipient = [], recipient
+        self.planning = planning
 
     def __call__(self, request):
         payload = json.loads(request.content)
         self.requests.append(payload)
         count = len(self.requests)
-        if count == 1:
+        step = count if self.planning else count + 1
+        if not self.planning and step >= 6:
+            step += 1
+        if step == 1:
             name, args = "todos_add", {"todos": [{"title": title} for title in
                 ["Assess the confirmed event menu", "Review vendor evidence", "Resolve the mock email action"]]}
-        elif count == 2:
+        elif step == 2:
             name, args = "assess_event", {}
-        elif count == 3:
+        elif step == 3:
             name, args = "read_vendor_document", {}
-        elif count == 4:
+        elif step == 4:
             name, args = "draft_vendor_email", {"recipient": self.recipient}
-        elif count == 5 and self.recipient != "vendor@example.com":
+        elif step == 5 and self.recipient != "vendor@example.com":
             name, args = None, None  # Controlled forbidden-recipient attempt was blocked.
-        elif count == 5:
+        elif step == 5:
             # Read the actual tool result; do not predict random draft IDs.
             draft_id = None
             for item in payload.get("input", []):
@@ -38,7 +42,7 @@ class HarnessFixture:
             if not draft_id:
                 raise AssertionError("Fixture did not receive the draft tool result.")
             name, args = "save_vendor_email", {"draft_id": draft_id}
-        elif count == 6:
+        elif step == 6:
             name, args = "todos_complete", {"items": [{"id": i, "reason": "The host resolved this demonstration step."} for i in [1, 2, 3]]}
         else:
             name, args = None, None

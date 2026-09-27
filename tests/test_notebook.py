@@ -80,3 +80,42 @@ class NotebookTests(RecordingTest):
         self.assertEqual(namespace["result_without_trace"]["outcome"].attempts, 2)
         self.assertIsNotNone(namespace["approval_result"]["outcome"].receipt.approval_ticket_id)
         self.assertIn("validate_and_price", output.getvalue())
+
+    def test_act4_lesson_cells_execute_offline_and_preserve_decline_without_layers(self):
+        from formaggio.fixtures.harness_fixture import HarnessFixture
+        notebook = json.loads((ROOT / "notebooks/act_4.ipynb").read_text())
+        namespace, clients = {}, []
+        original = HarnessFixture.client
+        def client(fixture):
+            value = original(fixture)
+            clients.append(value)
+            return value
+        async def execute():
+            for index, cell in enumerate(notebook["cells"]):
+                if cell["cell_type"] != "code":
+                    continue
+                self.assertEqual(cell["outputs"], [])
+                compiled = compile("".join(cell["source"]), f"act4-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                if "lesson" not in cell["metadata"].get("tags", []):
+                    continue
+                value = eval(compiled, namespace)
+                if inspect.isawaitable(value):
+                    await value
+                namespace["DB_PATH"] = self.root / "act4_notebook.sqlite"
+                namespace["OUTPUT_ROOT"] = self.root / "artifacts"
+        with patch.object(HarnessFixture, "client", client), \
+             patch("formaggio.agents.planner_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called live API")), \
+             redirect_stdout(io.StringIO()):
+            asyncio.run(execute())
+        for name in ("result", "minimal_result", "uncompacted_result", "compacted_result"):
+            result = namespace[name]
+            self.assertEqual(result["status"], "declined")
+            self.assertEqual(result["artifacts"], [])
+            self.assertTrue(result["scripted"])
+        self.assertEqual(namespace["minimal_result"]["tasks"], [])
+        self.assertEqual(namespace["minimal_result"]["preferences"], [])
+        self.assertEqual(namespace["uncompacted_result"]["compactions"], 0)
+        self.assertGreater(namespace["compacted_result"]["compactions"], 0)
+        self.assertIn("decline", namespace["states"][-1]["email_decisions"].values())
+        self.assertEqual(len(clients), 4)
+        self.assertTrue(all(api.is_closed() for api in clients))
