@@ -61,21 +61,21 @@ async def dispatch(recorder, act, case, *, model, fixture, prompt, proposer_prom
         return case["decision"]
     common = dict(model=model, scenario=case["scenario"], progress=progress, prompt=prompt)
     if act in {1, 2}:
-        from act1_agent import run_agent
+        from acts.act1_agent import run_agent
         if fixture:
             from formaggio.fixtures.evaluation_fixture import ProposalFixture
             async with ProposalFixture(case["expect"]).client() as client:
                 return await run_agent(recorder, **common, act=act, mode=case["context"], api_client=client, execution_mode="fixture")
         return await run_agent(recorder, **common, act=act, mode=case["context"])
     if act == 3:
-        from act3_workflow import run_act3
+        from acts.act3_workflow import run_act3
         return await run_act3(recorder, **common, fixture=fixture, manager=decision, decision_source="evaluation_fixture")
     if act == 6:
-        from act6_composition import run_act6
+        from acts.act6_composition import run_act6
         return await run_act6(recorder, **common, fixture=fixture, manager=decision, decision_source="evaluation_fixture",
                               skills_root=skills_root, proposer_prompt=proposer_prompt)
-    from act4_harness import run_act4
-    from act5_skills import run_act5
+    from acts.act4_harness import run_act4
+    from acts.act5_skills import run_act5
     with TemporaryDirectory(prefix="formaggio-eval-memory-") as directory:
         extra = {"skills_root": skills_root} if act == 5 else {}
         return await (run_act5 if act == 5 else run_act4)(recorder, **common, **extra, fixture=fixture,

@@ -53,8 +53,8 @@ def visible_messages(messages):
     return result
 
 
-def progress_value(recorder, value, *, limit=1200):
-    """Redact before formatting console previews; full payloads stay in the trace."""
+def clean_progress_value(recorder, value):
+    """Unwrap SDK text results before redacting structured payloads."""
     value = json_value(value)
 
     def decode_text(text):
@@ -73,11 +73,67 @@ def progress_value(recorder, value, *, limit=1200):
         # Decode before redaction so sensitive field names remain recognizable.
         parts = [decode_text(part["text"]) for part in value]
         value = parts[0] if len(parts) == 1 else parts
-    value = recorder.redactor.clean(value)
+    return recorder.redactor.clean(value)
+
+
+def progress_value(recorder, value, *, limit=1200):
+    """Redact before formatting JSON previews; full payloads stay in the trace."""
+    value = clean_progress_value(recorder, value)
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
     if len(text) > limit:
         text = text[:limit] + "\n… [preview truncated; use --inspect-run for the recorded payload]"
     return "\n".join("    " + line for line in text.splitlines())
+
+
+def compact_value(value, *, collections=False, depth=0):
+    """Small readable payload summaries, without JSON braces or escaped strings."""
+    if isinstance(value, dict):
+        if not value:
+            return "none"
+        if depth >= 3:
+            return f"{len(value)} fields"
+        parts = [f"{key.replace('_', ' ')}: {compact_value(item, collections=collections, depth=depth + 1)}"
+                 for key, item in list(value.items())[:6]]
+        if len(value) > 6:
+            parts.append(f"… {len(value) - 6} more fields")
+        return "; ".join(parts)
+    if isinstance(value, list):
+        if collections or depth >= 3:
+            return f"{len(value)} entries"
+        parts = [compact_value(item, depth=depth + 1) for item in value[:4]]
+        if len(value) > 4:
+            parts.append(f"… {len(value) - 4} more entries")
+        return " / ".join(parts) or "none"
+    if value is None:
+        return "not supplied"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    text = " ".join(str(value).split())
+    return text[:157] + "…" if len(text) > 160 else text
+
+
+class ConsoleProgress:
+    """Callable progress sink; detailed JSON is an explicit display option."""
+    def __init__(self, write=print, *, show_json=False):
+        self.write, self.show_json = write, show_json
+
+    def __call__(self, message):
+        self.write(message)
+
+    def payload(self, recorder, label, value, *, limit=1200, result=False):
+        if self.show_json:
+            self.write(label + "\n" + progress_value(recorder, value, limit=limit))
+        else:
+            text = compact_value(clean_progress_value(recorder, value), collections=result)
+            if len(text) > 300:
+                text = text[:297] + "…"
+            self.write(label + " " + text)
+
+
+def console_progress(progress):
+    if progress is None or isinstance(progress, ConsoleProgress):
+        return progress
+    return ConsoleProgress(write=progress)
 
 
 class ModelTrace(ChatMiddleware):
@@ -147,7 +203,7 @@ class ModelTrace(ChatMiddleware):
 class ToolTrace(FunctionMiddleware):
     def __init__(self, recorder, run_id, allowed_names, progress=None):
         self.recorder, self.run_id = recorder, run_id
-        self.allowed_names, self.progress = set(allowed_names), progress
+        self.allowed_names, self.progress = set(allowed_names), console_progress(progress)
         self.invocations = 0
 
     def record(self, event, data):
@@ -172,7 +228,7 @@ class ToolTrace(FunctionMiddleware):
         self.record("tool.started", info)
         if self.progress:
             self.progress(self.recorder.redactor.clean(f"  🔧 Tool call {self.invocations}: {name}"))
-            self.progress("  📋 Arguments:\n" + progress_value(self.recorder, context.arguments, limit=2400))
+            self.progress.payload(self.recorder, "  📋 Arguments:", context.arguments, limit=2400)
         started = monotonic()
         try:
             await call_next()
@@ -184,8 +240,8 @@ class ToolTrace(FunctionMiddleware):
         self.record("tool.completed", {**info, "result": json_value(context.result)})
         if self.progress:
             # A completed invocation can still return a business rejection.
-            self.progress(f"  📦 Result ({monotonic() - started:.2f}s):\n"
-                          + progress_value(self.recorder, context.result, limit=900))
+            self.progress.payload(self.recorder, f"  📦 Result ({monotonic() - started:.2f}s):",
+                                  context.result, limit=900, result=True)
 
 
 def make_client(model, middleware, api_client=None, *, function_limits=None):

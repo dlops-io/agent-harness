@@ -29,6 +29,61 @@ def customer_message(request: Request) -> str:
             + request.model_dump_json(indent=2))
 
 
+def customer_ask(request: Request) -> str:
+    """Display-only rendering of scenario fields, not an original user transcript."""
+    def join_words(values):
+        if len(values) < 2:
+            return "".join(values)
+        return ", ".join(values[:-1]) + " and " + values[-1]
+
+    if request.intent == "complaint":
+        opening = "Could you help me with a problem with my cheese order"
+    else:
+        action = "order" if request.intent == "order" and request.order_authorized else "choose"
+        opening = f"Could you help me {action} cheese for a tasting"
+    if request.party_size is not None:
+        opening += f" for {request.party_size} guests"
+    if request.state:
+        opening += f" in {request.state}"
+    if request.budget_cents is not None:
+        opening += f" on a ${request.budget_cents / 100:.2f} budget"
+    parts = [opening + "?"]
+    missing = []
+    if request.party_size is None:
+        missing.append("the number of guests")
+    if request.state is None:
+        missing.append("the destination")
+    if request.budget_cents is None:
+        missing.append("my budget")
+    if missing:
+        parts.append("I still need to confirm " + join_words(missing) + ".")
+    if request.allergies is None:
+        parts.append("I still need to check everyone's allergies.")
+    elif request.allergies:
+        parts.append("We need to avoid " + join_words(request.allergies) + ".")
+        if not request.allergies_confirmed:
+            parts.append("I'll double-check those allergies before we finalize anything.")
+    elif request.allergies_confirmed:
+        parts.append("I've checked, and nobody has any allergies.")
+    else:
+        parts.append("I haven't heard of any allergies, but I still need to confirm that.")
+    choices = []
+    if request.required_countries:
+        countries = join_words(request.required_countries)
+        choices.append("at least one cheese from " + ("each of " if len(request.required_countries) > 1 else "") + countries)
+    if request.required_min_funk is not None:
+        choices.append(f"at least one with a funk rating of {request.required_min_funk} or higher")
+    if choices:
+        parts.append("I'd like " + join_words(choices) + ".")
+    if request.wants_pairings:
+        parts.append("Could you suggest some pairings too?")
+    if request.preferences:
+        parts.append("For this tasting, here's what I have in mind: " + "; ".join(request.preferences) + ".")
+    if not request.order_authorized:
+        parts.append("Please don't place an order yet.")
+    return " ".join(parts)
+
+
 def build_context(request: Request, store: Store, mode: str, *, customers=None) -> dict:
     if mode not in {"basic", "enriched"}:
         raise ValueError("Context mode must be basic or enriched.")

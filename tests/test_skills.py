@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
-from act5_skills import run_act5
+from acts.act5_skills import run_act5
 from formaggio.config import load_json
 from formaggio.agents.context import load_scenario
 from formaggio.operations.governance import PolicyBlocked

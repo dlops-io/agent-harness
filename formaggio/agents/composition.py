@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from opentelemetry import trace
 
-from act3_workflow import build_workflow
+from acts.act3_workflow import build_workflow
 from formaggio.shop.data_models import ApprovalTicket, WorkflowOutcome, WorkflowState
 from formaggio.operations.governance import Governance, PolicyBlocked
 

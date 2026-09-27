@@ -11,7 +11,7 @@ import unittest
 def main():
     test_dir = Path(__file__).resolve().parent
     tutorial_dir = test_dir.parent
-    # Make the tutorial package and root-level act modules available from either directory.
+    # Make the acts and formaggio packages available from either directory.
     # This affects only the test process; the working directory stays unchanged.
     sys.path.insert(0, str(tutorial_dir))
     arguments = sys.argv[1:]

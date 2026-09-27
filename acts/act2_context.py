@@ -19,7 +19,7 @@ def preview_context(scenario="standard"):
 # %% Two independent sessions/inventories; each mode runs once, without an evaluation suite.
 async def run_act2(recorder, *, scenario="standard", mode="both", model=MODEL,
                    progress=None, on_result=None):
-    from act1_agent import run_agent
+    from acts.act1_agent import run_agent
     if mode not in {"basic", "enriched", "both"}:
         raise ValueError("Choose basic, enriched, or both context modes.")
     modes = ["basic", "enriched"] if mode == "both" else [mode]

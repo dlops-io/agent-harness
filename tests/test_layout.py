@@ -15,6 +15,7 @@ class LayoutTests(RecordingTest):
     def test_nested_source_edits_change_every_snapshot_without_basename_collisions(self):
         files = {
             "cli.py": "# entry point\n",
+            "acts/shared.py": "# lesson\n",
             "formaggio/shop/shared.py": "# shop\n",
             "formaggio/agents/shared.py": "# agent\n",
             "scripts/check_sdk.py": "# inspection\n",
@@ -34,14 +35,16 @@ class LayoutTests(RecordingTest):
 
         with patch("formaggio.config.ROOT", self.root):
             before = source_hashes()
-            self.assertEqual(set(before), {"cli.py", "formaggio/shop/shared.py",
+            self.assertEqual(set(before), {"cli.py", "acts/shared.py", "formaggio/shop/shared.py",
                                            "formaggio/agents/shared.py", "scripts/check_sdk.py"})
             self.assertTrue(all(value == before for value in snapshots()))
-            (self.root / "formaggio/shop/shared.py").write_text("# changed shop behavior\n")
-            after = source_hashes()
-            self.assertEqual([key for key in before if before[key] != after[key]],
-                             ["formaggio/shop/shared.py"])
-            self.assertTrue(all(value == after for value in snapshots()))
+            after = before
+            for name in ["formaggio/shop/shared.py", "acts/shared.py"]:
+                previous = after
+                (self.root / name).write_text("# changed behavior\n")
+                after = source_hashes()
+                self.assertEqual([key for key in previous if previous[key] != after[key]], [name])
+                self.assertTrue(all(value == after for value in snapshots()))
             (self.root / "outputs/generated.py").write_text("# changed output\n")
             self.assertEqual(after, source_hashes())
 

@@ -5,8 +5,8 @@ from time import monotonic
 
 from agent_framework import Message, MiddlewareFailure, TodoProvider, create_harness_agent, tool
 
-from act3_workflow import AgentProposer, FixtureProposer
-from act4_harness import HarnessToolTrace, RecordedTodos, TODO_NAMES
+from acts.act3_workflow import AgentProposer, FixtureProposer
+from acts.act4_harness import HarnessToolTrace, RecordedTodos, TODO_NAMES
 from formaggio.shop.checkout import Checkout
 from formaggio.agents.composition import WorkflowOrders
 from formaggio.config import MODEL, ROOT, load_json

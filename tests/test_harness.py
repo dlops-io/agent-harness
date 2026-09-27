@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import httpx
 
-from act4_harness import run_act4
+from acts.act4_harness import run_act4
 from formaggio.config import load_json
 from formaggio.agents.context import load_scenario
 from formaggio.shop.data_models import LineItem
@@ -294,7 +294,7 @@ class HarnessTests(RecordingTest):
 
     def test_default_customer_follows_scenario_identity(self):
         request = load_scenario("event-shortage").model_copy(update={"customer_id": "shivas"})
-        with patch("act4_harness.load_scenario", return_value=request):
+        with patch("acts.act4_harness.load_scenario", return_value=request):
             result, backend = self.execute()
         self.assertEqual(result["preferences"], ["mild cheeses", "nonalcoholic pairings"])
         capsule = self.events(result, "context.model_input")[0]["capsule"]

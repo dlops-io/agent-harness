@@ -3,8 +3,8 @@ import json
 import sqlite3
 from unittest.mock import patch
 
-from act3_workflow import FixtureProposer
-from act6_composition import confirmed_requests, run_act6
+from acts.act3_workflow import FixtureProposer
+from acts.act6_composition import confirmed_requests, run_act6
 from formaggio.shop.checkout import Checkout
 from formaggio.agents.composition import WorkflowOrders
 from formaggio.fixtures.composition_fixture import CompositionFixture

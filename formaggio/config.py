@@ -15,7 +15,8 @@ def source_hashes():
     Only these code directories participate; generated outputs, test artifacts,
     environment files and notebook exports are not configuration inputs.
     """
-    paths = [*ROOT.glob("*.py"), *(ROOT / "formaggio").rglob("*.py"),
+    paths = [*ROOT.glob("*.py"), *(ROOT / "acts").rglob("*.py"),
+             *(ROOT / "formaggio").rglob("*.py"),
              *(ROOT / "scripts").rglob("*.py")]
     return {p.relative_to(ROOT).as_posix(): sha256(p.read_bytes()).hexdigest()
             for p in sorted(paths)}

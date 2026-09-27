@@ -4,10 +4,10 @@ import asyncio
 from agent_framework import Agent
 
 from formaggio.config import MODEL
-from formaggio.agents.context import ShopContextProvider, build_context, customer_message, instructions, load_scenario
+from formaggio.agents.context import ShopContextProvider, build_context, customer_ask, customer_message, instructions, load_scenario
 from formaggio.shop.data_models import AgentReply
 from formaggio.operations.observability import sdk_tracing
-from formaggio.agents.runtime import MODEL_OPTIONS, ModelTrace, ToolTrace, make_client, run_snapshot
+from formaggio.agents.runtime import MODEL_OPTIONS, ModelTrace, ToolTrace, console_progress, make_client, run_snapshot
 from formaggio.shop.store import Store
 from formaggio.agents.tools import build_tools
 
@@ -17,6 +17,7 @@ async def run_agent(recorder, *, scenario="standard", mode="basic", model=MODEL,
                     api_client=None, progress=None, act=1, execution_mode="live", prompt=None):
     if execution_mode not in {"live", "fixture"} or (execution_mode == "fixture" and api_client is None):
         raise ValueError("Fixture mode requires an explicitly supplied local test client.")
+    progress = console_progress(progress)
     store = Store()
     request = load_scenario(scenario)
     packet = build_context(request, store, mode)
@@ -40,9 +41,10 @@ async def run_agent(recorder, *, scenario="standard", mode="basic", model=MODEL,
             message = customer_message(request)
             if progress:
                 progress(f"\n🧪 Act {act} · {mode.upper()} context · scenario: {scenario}")
-                progress("👤 Customer question (actual message sent to the model):\n"
-                         + recorder.redactor.clean(message))
-                progress(f"\n🔎 Run: {run_id}. Tool arguments/results below; full model inputs: --inspect-run {run_id}")
+                progress("👤 Customer ask:\n"
+                         + recorder.redactor.clean(customer_ask(request)))
+                if progress.show_json:
+                    progress("\n📋 Exact customer message sent to the model:\n" + recorder.redactor.clean(message))
             async with asyncio.timeout(120):
                 response = await agent.run(message, session=agent.create_session())
             reply = response.value

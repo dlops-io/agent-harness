@@ -7,7 +7,7 @@ from unittest.mock import patch
 import httpx
 from openai import AsyncOpenAI
 
-from act3_workflow import run_act3
+from acts.act3_workflow import run_act3
 from formaggio.shop.checkout import Checkout
 from formaggio.config import load_json
 from formaggio.shop.data_models import CartProposal, LineItem

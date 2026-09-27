@@ -1,5 +1,5 @@
 """Act 5 adds progressive skill loading to the same Act 4 harness."""
-from act4_harness import run_harness
+from acts.act4_harness import run_harness
 from formaggio.agents.skill_support import SKILLS_ROOT, SkillFiles
 
 

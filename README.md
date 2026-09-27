@@ -150,7 +150,15 @@ This will:
 - Display the agent's response and an independent check of its final cart.
 - Record the run without placing an order or silently repairing the proposal.
 
-The console prints the actual customer message, numbered model/tool calls, tool arguments, and result previews. Model steps show the latest tool results in context, elapsed time, and token usage when available. Long payloads are labeled as truncated previews; use `--inspect-run RUN_ID` for the full recorded model/tool payloads. These logs describe visible execution, not hidden model reasoning.
+The console starts with the customer ask in plain language, followed by numbered model/tool calls and compact argument/result summaries. Model steps show the latest tool results in context, elapsed time, and token usage when available.
+
+The ask is rendered from the confirmed fields in [scenarios.json](data/scenarios.json); the fixtures do not store a separate original customer sentence. This display does not change the message sent to the model. To see that exact message, including its structured request, and detailed JSON tool payload previews, add `--show-json`:
+
+```bash
+python cli.py --act 1 --scenario standard --show-json
+```
+
+`--show-json` also applies to progress logs in the other individual act runs. Long JSON payloads are labeled as truncated previews; use `--inspect-run RUN_ID` for the full recorded model/tool payloads. SQLite tracing remains complete in either display mode. Explicit inspection commands such as `--preview-context` and `--inspect-run`, and the existing `--show-context` option, still display their requested details. These logs describe visible execution, not hidden model reasoning.
 
 **What to look for:** Does the proposal satisfy the independent cart check? Does the response distinguish a proposal from an order? An invalid proposal is useful evidence for the later workflow lesson.
 
@@ -164,7 +172,7 @@ python cli.py --act 1 --scenario missing-details
 
 The destination and allergy information are missing. Look for clarification instead of invented details.
 
-**Code to read:** [act1_agent.py](act1_agent.py), [tools.py](formaggio/agents/tools.py), and [shop_assistant.md](prompts/shop_assistant.md).
+**Code to read:** [act1_agent.py](acts/act1_agent.py), [tools.py](formaggio/agents/tools.py), and [shop_assistant.md](prompts/shop_assistant.md).
 
 **Checkpoint:** Explain why calling `preview_order` does not authorize or place an order.
 
@@ -200,7 +208,7 @@ This will:
 
 **What to look for:** Which facts are already available in enriched mode? Which products were filtered out? Did the model need different tool calls? One pair of runs does not establish that enriched context always performs better.
 
-**Code to read:** [act2_context.py](act2_context.py) and [context.py](formaggio/agents/context.py).
+**Code to read:** [act2_context.py](acts/act2_context.py) and [context.py](formaggio/agents/context.py).
 
 **Checkpoint:** Explain why selecting eligible candidates is useful but does not replace validation of the final cart. Current confirmed constraints remain authoritative over saved preferences.
 
@@ -251,7 +259,7 @@ python cli.py --act 3 --fixture --scenario out-of-stock
 
 Look for an initial stock violation followed by a revised valid cart. Pairings should correspond to the accepted cart.
 
-**Code to read:** [act3_workflow.py](act3_workflow.py), [store.py](formaggio/shop/store.py), and [checkout.py](formaggio/shop/checkout.py).
+**Code to read:** [act3_workflow.py](acts/act3_workflow.py), [store.py](formaggio/shop/store.py), and [checkout.py](formaggio/shop/checkout.py).
 
 **Checkpoint:** Identify what an approval is bound to and why checkout must revalidate after a human pause.
 
@@ -295,7 +303,7 @@ python cli.py --act 4 --customer shivas
 
 Compare the printed memory on the second visit. The host persists the explicitly supplied preference; the model has no memory-write tool. Default live preference memory survives across runs, while standalone fixtures use isolated memory unless you supply `--memory-db`.
 
-**Code to read:** [act4_harness.py](act4_harness.py), [harness_state.py](formaggio/agents/harness_state.py), [governance.py](formaggio/operations/governance.py), and [vendor_outreach.py](formaggio/shop/vendor_outreach.py).
+**Code to read:** [act4_harness.py](acts/act4_harness.py), [harness_state.py](formaggio/agents/harness_state.py), [governance.py](formaggio/operations/governance.py), and [vendor_outreach.py](formaggio/shop/vendor_outreach.py).
 
 **Checkpoint:** Distinguish task state, conversation history, preference memory, approval state, and audit records. Which of these can authorize an action?
 
@@ -340,7 +348,7 @@ python cli.py --act 5 --fixture --email-decision approve
 
 These scripted responses demonstrate the integration. To observe the model's own skill choices, repeat a command without `--fixture`; omit the test-decision flag for interactive review.
 
-**Code to read:** [act5_skills.py](act5_skills.py), [skill_support.py](formaggio/agents/skill_support.py), [tasting-planning/SKILL.md](skills/tasting-planning/SKILL.md), and [vendor-outreach/SKILL.md](skills/vendor-outreach/SKILL.md).
+**Code to read:** [act5_skills.py](acts/act5_skills.py), [skill_support.py](formaggio/agents/skill_support.py), [tasting-planning/SKILL.md](skills/tasting-planning/SKILL.md), and [vendor-outreach/SKILL.md](skills/vendor-outreach/SKILL.md).
 
 **Checkpoint:** Explain how a skill differs from a tool, and why reading instructions cannot approve a protected action.
 
@@ -387,7 +395,7 @@ This will demonstrate:
 - Shared resource constraints across otherwise valid requests.
 - A distinction between approval and successful placement.
 
-**Code to read:** [act6_composition.py](act6_composition.py) and [composition.py](formaggio/agents/composition.py).
+**Code to read:** [act6_composition.py](acts/act6_composition.py) and [composition.py](formaggio/agents/composition.py).
 
 **Checkpoint:** Explain why invoking a governed workflow as a tool is useful, and why two approvals do not guarantee two successful orders.
 
@@ -485,9 +493,11 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 
 ### Repository map
 
+`cli.py` is the only top-level Python file. The six lesson modules live in the `acts/` package; shared implementation code lives in `formaggio/`. Run every lesson through the same `python cli.py --act N` command.
+
 | Resource | What to inspect |
 |---|---|
-| [Act entry points](act1_agent.py) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
+| [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
 | [Operations](formaggio/operations/) | Governance and SQLite/OpenTelemetry recording |

@@ -9,9 +9,10 @@ from unittest.mock import patch
 import httpx
 from openai import AsyncOpenAI
 
-from act1_agent import run_agent
-from act2_context import preview_context
+from acts.act1_agent import run_agent
+from acts.act2_context import preview_context
 from formaggio.config import load_json
+from formaggio.agents.runtime import ConsoleProgress
 from formaggio.agents.context import build_context, instructions
 from formaggio.shop.store import Store
 from tests.support import RecordingTest, fixture
@@ -114,7 +115,7 @@ class ContextTests(RecordingTest):
         from cli import print_agent_result
         from formaggio.agents.context import customer_message, load_scenario
         lines = []
-        result, backend = self.run_scripted("basic", progress=lines.append)
+        result, backend = self.run_scripted("basic", progress=ConsoleProgress(lines.append, show_json=True))
         output = "\n".join(lines)
         question = customer_message(load_scenario("standard"))
         self.assertIn(question, output)
@@ -134,6 +135,64 @@ class ContextTests(RecordingTest):
         self.assertIn("✅ Cart satisfies the shop rules.", final.getvalue())
         self.assertIn("Tool calls: 2", final.getvalue())
         self.assertIn("No order was placed", final.getvalue())
+
+    def test_cli_json_flag_changes_display_but_not_model_inputs_or_trace(self):
+        import cli
+        outputs, requests, traces = [], [], []
+        for show_json in (False, True):
+            backend = ScriptedResponses()
+            async def local_agent(recorder, **kwargs):
+                async with AsyncOpenAI(api_key="unit-test-credential", base_url="https://fixture.invalid/v1",
+                                       max_retries=0, http_client=httpx.AsyncClient(transport=httpx.MockTransport(backend))) as api:
+                    result = await run_agent(recorder, api_client=api, execution_mode="fixture", **kwargs)
+                    traces.append(recorder.timeline(result["run_id"]))
+                    return result
+            output = io.StringIO()
+            args = ["cli.py", "--act", "1", "--scenario", "standard", "--model", "fixture-model",
+                    "--db", str(self.root / f"cli-{show_json}.sqlite")]
+            if show_json:
+                args.append("--show-json")
+            with patch("sys.argv", args), patch("acts.act1_agent.run_act1", side_effect=local_agent), redirect_stdout(output):
+                cli.main()
+            outputs.append(output.getvalue())
+            requests.append(backend.requests)
+        for output in outputs:
+            lines = output.strip().splitlines()
+            self.assertTrue(lines[-2].startswith("🔎 Run:"))
+            self.assertTrue(lines[-1].startswith("💾 Recorded in"))
+            self.assertEqual(output.count("🔎 Run:"), 1)
+        compact, detailed = outputs
+        self.assertIn("👤 Customer ask:\nCould you help me order cheese", compact)
+        self.assertNotIn("🛡️ Proposals only; no orders are placed.", compact)
+        self.assertNotIn("💡 Use --show-json", compact)
+        for phrase in ["12 guests", "$150.00", "PA", "avoid nuts", "France", "funk rating of 4", "suggest some pairings"]:
+            self.assertIn(phrase, compact)
+        self.assertIn("product: epoisses; grams: 300", compact)
+        self.assertIn("products:", compact)
+        self.assertNotIn('"customer_id":', compact)
+        self.assertNotIn('"products":', compact)
+        self.assertNotIn('"items":', compact)
+        self.assertIn('"customer_id": "pavlos"', detailed)
+        self.assertIn('"products":', detailed)
+        self.assertIn("Exact customer message sent to the model", detailed)
+        self.assertLess(len(compact), len(detailed))
+        self.assertEqual(requests[0], requests[1])
+        for events in traces:
+            catalog = next(e["payload"] for e in events if e["event_type"] == "tool.completed")
+            self.assertIn('halloumi', json.dumps(catalog))  # Full catalog still recorded in compact mode.
+
+    def test_readable_ask_preserves_missing_and_unconfirmed_details(self):
+        from formaggio.agents.context import customer_ask
+        request, _ = fixture("missing-details")
+        text = customer_ask(request)
+        self.assertIn("need to confirm the destination", text)
+        self.assertIn("need to check everyone's allergies", text)
+        request, _ = fixture("standard", allergies=[], allergies_confirmed=False,
+                             order_authorized=False, required_min_funk=0,
+                             preferences=["Prefer Italian cheese today"])
+        text = customer_ask(request)
+        for phrase in ["haven't heard of any allergies", "need to confirm", "don't place an order yet", "funk rating of 0", "Prefer Italian cheese today"]:
+            self.assertIn(phrase, text)
 
     def test_only_context_changes_between_modes(self):
         basic, a = self.run_scripted("basic")

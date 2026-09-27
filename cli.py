@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--scenario", default=None)
     parser.add_argument("--context", choices=["basic", "enriched", "both"], default=None)
     parser.add_argument("--model", default=MODEL, help="Model ID; defaults to OPENAI_CHAT_MODEL or formaggio/config.py")
+    parser.add_argument("--show-json", action="store_true", help="Include JSON payload previews in act progress logs")
     parser.add_argument("--show-context", action="store_true", help="Print the supplied context before live calls")
     parser.add_argument("--fixture", action="store_true", help="Acts 3–6: scripted inputs/local responses; no service calls")
     parser.add_argument("--manager-decision", choices=["approve", "decline"],
@@ -45,6 +46,10 @@ def main():
     parser.add_argument("--remember-preference", action="append", default=[], help="Acts 4–5: explicitly save a customer-confirmed preference")
     parser.add_argument("--memory-db", type=Path, help="Acts 4–5: separate operational preference database")
     args = parser.parse_args()
+    from formaggio.agents.runtime import ConsoleProgress
+    progress = ConsoleProgress(show_json=args.show_json)
+    if args.show_json and (not args.act or args.evaluate):
+        parser.error("--show-json applies to individual --act runs.")
     args.repeats = args.repeats if args.repeats is not None else (5 if args.evaluate else 1)
     if args.evaluate and (not args.act or not args.label):
         parser.error("--evaluate requires --act and a new --label.")
@@ -80,7 +85,7 @@ def main():
     if args.act in {3, 4, 5, 6} and (args.context or args.show_context):
         parser.error("Acts 3–6 assemble their own context; inspect the recorded context events.")
     if args.preview_context or (args.act and args.show_context):
-        from act2_context import preview_context
+        from acts.act2_context import preview_context
         try:
             print(json.dumps(preview_context(args.scenario), ensure_ascii=False, indent=2))
         except ValueError as exc:
@@ -96,7 +101,7 @@ def main():
                     case_ids=args.case_ids, context=args.context, model=args.model, fixture=args.fixture,
                     prompt=args.prompt_file.read_text() if args.prompt_file else None,
                     proposer_prompt=args.proposer_prompt_file.read_text() if args.proposer_prompt_file else None,
-                    skills_root=args.skills_dir or SKILLS_ROOT, progress=print))
+                    skills_root=args.skills_dir or SKILLS_ROOT, progress=progress))
             except Exception as exc:
                 print("Evaluation stopped: " + recorder.redactor.clean(str(exc)))
                 raise SystemExit(1) from None
@@ -110,8 +115,8 @@ def main():
             print_evaluation_report(report)
             export_json(args.json_output, report)
         elif args.act:
-            from act1_agent import run_act1
-            from act2_context import run_act2
+            from acts.act1_agent import run_act1
+            from acts.act2_context import run_act2
             if args.act == 3:
                 print("Workflow lesson — " + ("FIXTURE proposals; no model calls." if args.fixture else f"model: {args.model}."))
                 print("Mock orders only. Inventory and approval state last for this process; traces are saved in SQLite.")
@@ -132,20 +137,23 @@ def main():
                     print("TEST: force the detector to miss an attack; the recipient policy must still block it.")
             else:
                 print(f"🧀 {'Agent and tools' if args.act == 1 else 'Context engineering'} lesson — model: {args.model}.")
-                print("🛡️ Proposals only; no orders are placed.")
             try:
                 if args.act == 1:
-                    result = asyncio.run(run_act1(recorder, scenario=args.scenario, model=args.model, progress=print))
+                    result = asyncio.run(run_act1(recorder, scenario=args.scenario, model=args.model, progress=progress))
                     print_agent_result(result)
                 elif args.act == 2:
-                    asyncio.run(run_act2(recorder, scenario=args.scenario, mode=args.context or "both",
-                                          model=args.model, progress=print, on_result=print_agent_result))
+                    results = asyncio.run(run_act2(recorder, scenario=args.scenario, mode=args.context or "both",
+                                          model=args.model, progress=progress, on_result=print_agent_result))
                 elif args.act in {3, 6}:
-                    from act3_workflow import run_act3
-                    from act6_composition import run_act6
+                    from acts.act3_workflow import run_act3
+                    from acts.act6_composition import run_act6
                     async def manager(ticket):
                         print(f"\nMANAGER REVIEW — ticket {ticket.ticket_id}")
-                        print("Confirmed request:\n" + ticket.request.model_dump_json(indent=2))
+                        if args.show_json:
+                            print("Confirmed request:\n" + ticket.request.model_dump_json(indent=2))
+                        else:
+                            from formaggio.agents.context import customer_ask
+                            print("Confirmed request:\n" + recorder.redactor.clean(customer_ask(ticket.request)))
                         print_cart(ticket.report)
                         if args.manager_decision:
                             return args.manager_decision
@@ -158,12 +166,12 @@ def main():
                                 return answer
                             print("Please enter approve or decline.")
                     result = asyncio.run((run_act6 if args.act == 6 else run_act3)(recorder, scenario=args.scenario, model=args.model,
-                        fixture=args.fixture, manager=manager, progress=print,
+                        fixture=args.fixture, manager=manager, progress=progress,
                         decision_source="test_option" if args.manager_decision else "human"))
                     (print_composition_result if args.act == 6 else print_workflow_result)(result)
                 else:
-                    from act4_harness import run_act4
-                    from act5_skills import run_act5
+                    from acts.act4_harness import run_act4
+                    from acts.act5_skills import run_act5
                     run_lesson = run_act5 if args.act == 5 else run_act4
                     async def email_reviewer(review):
                         print(f"\nMOCK EMAIL REVIEW — ticket {review.ticket_id}")
@@ -182,12 +190,16 @@ def main():
                         document=args.vendor_document or "clean", demo_compaction=args.demo_compaction,
                         simulate_detector_miss=args.simulate_detector_miss, customer_id=args.customer,
                         remember_preferences=args.remember_preference, memory_path=args.memory_db,
-                        reviewer=email_reviewer, decision_source="test_option" if args.email_decision else "human", progress=print))
+                        reviewer=email_reviewer, decision_source="test_option" if args.email_decision else "human", progress=progress))
                     print_harness_result(result)
             except Exception as exc:
                 print("Run stopped: " + recorder.redactor.clean(str(exc)))
                 print(f"Inspect the recorded error with --list-runs and --inspect-run. Database: {args.db}")
                 raise SystemExit(1) from None
+            if args.act in {1, 2}:
+                for completed in ([result] if args.act == 1 else results):
+                    run_id = completed["run_id"]
+                    print(f"🔎 Run: {run_id}. Full recorded model inputs: --inspect-run {run_id}")
             print(f"💾 Recorded in {args.db}. No evaluation suite was run.")
         elif args.foundation:
             prompt = args.prompt_file.read_text(encoding="utf-8") if args.prompt_file else None

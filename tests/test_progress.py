@@ -6,26 +6,29 @@ from unittest.mock import patch
 
 from agent_framework import Content, MiddlewareFailure
 
-from formaggio.agents.runtime import ToolTrace, progress_value
+from formaggio.agents.runtime import ConsoleProgress, ToolTrace, progress_value
 from tests.support import RecordingTest
 
 
 class ProgressTests(RecordingTest):
     def test_tool_subquery_arguments_and_serialized_results_are_redacted(self):
-        lines = []
-        trace = ToolTrace(self.recorder, self.run_id, ["search_catalog"], lines.append)
-        context = SimpleNamespace(function=SimpleNamespace(name="search_catalog"),
-            arguments={"query": "French cheese", "authorization": "private-header", "note": "unit-test-credential"},
-            result=None)
-        async def execute():
-            context.result = [Content.from_text(json.dumps({"answer": "Found cheese", "password": "private-password"}))]
-        asyncio.run(trace.process(context, execute))
-        output = "\n".join(lines)
-        self.assertIn('"query": "French cheese"', output)
-        self.assertIn('"answer": "Found cheese"', output)
-        self.assertIn("[REDACTED]", output)
-        for secret in ["private-header", "private-password", "unit-test-credential"]:
-            self.assertNotIn(secret, output)
+        for show_json in (False, True):
+            with self.subTest(show_json=show_json):
+                lines = []
+                trace = ToolTrace(self.recorder, self.run_id, ["search_catalog"],
+                                  ConsoleProgress(lines.append, show_json=show_json))
+                context = SimpleNamespace(function=SimpleNamespace(name="search_catalog"),
+                    arguments={"query": "French cheese", "authorization": "private-header", "note": "unit-test-credential"},
+                    result=None)
+                async def execute():
+                    context.result = [Content.from_text(json.dumps({"answer": "Found cheese", "password": "private-password"}))]
+                asyncio.run(trace.process(context, execute))
+                output = "\n".join(lines)
+                self.assertIn('"query": "French cheese"' if show_json else 'query: French cheese', output)
+                self.assertIn('"answer": "Found cheese"' if show_json else 'answer: Found cheese', output)
+                self.assertIn("[REDACTED]", output)
+                for secret in ["private-header", "private-password", "unit-test-credential"]:
+                    self.assertNotIn(secret, output)
 
     def test_failed_required_audit_does_not_execute_or_print_tool_arguments(self):
         lines, called = [], []
