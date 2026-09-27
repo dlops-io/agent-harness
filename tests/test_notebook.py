@@ -16,7 +16,7 @@ from tests.test_layers import local_api
 
 class NotebookTests(RecordingTest):
     def test_lesson_cells_execute_with_local_responses_and_keep_agent_definition_equivalent(self):
-        notebook = json.loads((ROOT / "notebooks/acts_1_2.ipynb").read_text())
+        notebook = json.loads((ROOT / "notebooks/act_1_2.ipynb").read_text())
         namespace, clients, backends = {"Path": Path}, [], []
         def client_factory(*args, **kwargs):
             backend = ScriptedResponses()
