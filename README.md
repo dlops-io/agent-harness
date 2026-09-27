@@ -66,6 +66,25 @@ Live model calls are enabled by default. Set `USE_FIXTURES = True` for scripted 
 
 The lesson cells use top-level `await`, so no `asyncio.run()` or event-loop patching is needed. Run `python -m tests -p test_notebook.py` to execute the saved lesson cells using local responses and temporary output files. The tests skip cloning, installation, and credentials, and cover both approval decisions. Run `python -m tests` for all offline checks.
 
+### Visual notebook output
+
+Each notebook includes a recorded chat view after the lesson run. Keep this import with the other notebook imports:
+
+```python
+from formaggio.operations.chat_view import show_chat
+```
+
+Then display any saved run, even after its recorder has closed:
+
+```python
+show_chat(DB_PATH, act1_result["run_id"])
+show_chat(DB_PATH, act1_result["run_id"], backstage=False)
+```
+
+The view reads the existing SQLite database without rerunning the agent. It separates the request and final answer from application outcomes and internal model activity. Expand the steps, checks, or recorded events for details. Task briefs and confirmed request fields retain their recorded provenance; scripted runs are labeled. Acts 5–6 show the tasting-plan delivery check separately from order status. The bare Act 1 SDK run has no recorder; its visual view starts with the harness run.
+
+`show_chat` uses IPython already available in Colab/Jupyter. For offline tests or HTML export, `render_run(DB_PATH, run_id)` returns the same HTML without importing IPython. The display is a static, read-only view; approvals remain in the existing host review callbacks. Test it with `python -m tests -p test_chat_view.py`; notebook tests also execute every display cell.
+
 ### Start the container
 
 Run these commands **on your host machine**, from `agent-harness`:

@@ -23,6 +23,7 @@ class NotebookTests(RecordingTest):
 
     def execute_notebook(self, name, *, decision="approve"):
         namespace, clients, backends = {}, [], []
+        rendered = []
         output = io.StringIO()
         original_client = HarnessFixture.client
 
@@ -61,6 +62,7 @@ class NotebookTests(RecordingTest):
         with ExitStack() as stack:
             stack.enter_context(chdir(run_root))
             stack.enter_context(redirect_stdout(output))
+            stack.enter_context(patch("formaggio.operations.chat_view._display_html", side_effect=rendered.append))
             stack.enter_context(patch("formaggio.agents.harness.AsyncOpenAI", side_effect=model_client))
             stack.enter_context(patch.object(HarnessFixture, "client", fixture_client))
             for module in ("workflow_runtime", "planner_runtime", "composition_runtime"):
@@ -69,6 +71,11 @@ class NotebookTests(RecordingTest):
             # Exercise the real callback, including its invalid-answer retry.
             review = stack.enter_context(patch("builtins.input", side_effect=["invalid", decision]))
             asyncio.run(execute())
+        self.assertEqual(len(rendered), {"act_1_2.ipynb": 3, "act_5.ipynb": 2}.get(name, 1))
+        for html in rendered:
+            self.assertIn("Request and response", html)
+            self.assertIn("Steps and checks", html)
+            self.assertNotIn("unit-test-credential", html)
         self.assertTrue(all(api.is_closed() for api in clients))
         self.assertNotIn("unit-test-credential", output.getvalue())
         self.assertNotIn("local-fixture-key", output.getvalue())
