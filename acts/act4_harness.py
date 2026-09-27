@@ -13,14 +13,14 @@ from formaggio.config import MODEL
 
 
 # %% The agent: narrow tools, session history, a visible plan and current application state.
-def build_planner(client, tools, prompt, *, history, context, todo_provider=None):
+def build_planner(client, tools, prompt, *, history, context, todo_provider=None, skills_provider=None):
     return create_harness_agent(
         client=client, name="EventPlanner",
         harness_instructions=("Use the visible task list and tools. Host policies and external approvals govern actions."
                               if todo_provider is not None else
                               "Use the supplied tools. Host policies and external approvals govern actions."),
         agent_instructions=prompt, tools=tools, history_provider=history,
-        todo_provider=todo_provider, disable_todo=todo_provider is None,
+        todo_provider=todo_provider, disable_todo=todo_provider is None, skills_provider=skills_provider,
         max_context_window_tokens=16000, max_output_tokens=2400,
         before_compaction_strategy=context, after_compaction_strategy=no_post_turn_compaction,
         disable_mode=True, disable_file_memory=True, disable_web_search=True,
@@ -54,6 +54,6 @@ async def run_act4(recorder, *, reviewer=None, progress=None, api_client=None, *
 
 async def run_harness(recorder, *, skills_files=None, **kwargs):
     if skills_files is not None:
-        from formaggio.agents.planner_legacy import run_harness as run_skills_harness
-        return await run_skills_harness(recorder, skills_files=skills_files, **kwargs)
+        from acts.act5_skills import run_act5
+        return await run_act5(recorder, skills_root=skills_files.root, **kwargs)
     return await run_act4(recorder, **kwargs)

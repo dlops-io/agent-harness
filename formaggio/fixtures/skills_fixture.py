@@ -7,7 +7,7 @@ from formaggio.fixtures.harness_fixture import HarnessFixture
 
 
 class SkillsFixture(HarnessFixture):
-    def __init__(self, scenario="event-shortage", *, recipient="vendor@example.com", calls=None):
+    def __init__(self, scenario="event-shortage", *, recipient="vendor@example.com", calls=None, planning=True, skills=True):
         super().__init__(recipient)
         def skill(name):
             return [("load_skill", {"skill_name": name}),
@@ -19,6 +19,11 @@ class SkillsFixture(HarnessFixture):
             + (skill("vendor-outreach") + [("read_vendor_document", {}), ("draft_vendor_email", {"recipient": recipient}),
                 ("save_vendor_email", None)] if scenario == "event-shortage" else [])
             + [("todos_complete", {"items": [{"id": 1, "reason": "Scripted planning/review demonstration finished."}]})])
+
+        if calls is None:
+            self.calls = [(name, args) for name, args in self.calls
+                          if (planning or not name.startswith("todos_"))
+                          and (skills or name not in {"load_skill", "read_skill_resource"})]
 
     def __call__(self, request):
         payload = json.loads(request.content)

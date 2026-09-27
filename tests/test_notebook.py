@@ -119,3 +119,41 @@ class NotebookTests(RecordingTest):
         self.assertIn("decline", namespace["states"][-1]["email_decisions"].values())
         self.assertEqual(len(clients), 4)
         self.assertTrue(all(api.is_closed() for api in clients))
+
+    def test_act5_lesson_cells_execute_offline_with_progressive_loading_and_template_gate(self):
+        from formaggio.fixtures.skills_fixture import SkillsFixture
+        notebook = json.loads((ROOT / "notebooks/act_5.ipynb").read_text())
+        namespace, clients = {}, []
+        original = SkillsFixture.client
+        def client(fixture):
+            value = original(fixture)
+            clients.append(value)
+            return value
+        async def execute():
+            for index, cell in enumerate(notebook["cells"]):
+                if cell["cell_type"] != "code":
+                    continue
+                self.assertEqual(cell["outputs"], [])
+                compiled = compile("".join(cell["source"]), f"act5-cell-{index}", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                if "lesson" not in cell["metadata"].get("tags", []):
+                    continue
+                value = eval(compiled, namespace)
+                if inspect.isawaitable(value):
+                    await value
+                namespace["DB_PATH"] = self.root / "act5_notebook.sqlite"
+                namespace["OUTPUT_ROOT"] = self.root / "artifacts"
+        with patch.object(SkillsFixture, "client", client), \
+             patch("formaggio.agents.planner_runtime.AsyncOpenAI", side_effect=AssertionError("Offline lesson called live API")), \
+             redirect_stdout(io.StringIO()):
+            asyncio.run(execute())
+        self.assertEqual(namespace["stock_result"]["status"], "answered")
+        self.assertEqual(namespace["stock_result"]["skills_loaded"], [])
+        self.assertEqual(namespace["tasting_result"]["status"], "plan_proposed")
+        self.assertEqual(namespace["tasting_result"]["skills_loaded"], ["tasting-planning"])
+        self.assertEqual(namespace["outreach_result"]["status"], "declined")
+        self.assertEqual(len(namespace["outreach_result"]["skill_resources"]), 4)
+        self.assertEqual(namespace["without_skills_result"]["status"], "blocked")
+        self.assertEqual(namespace["without_skills_result"]["skills_loaded"], [])
+        self.assertFalse(list(self.root.rglob("*.html")))
+        self.assertEqual(len(clients), 4)
+        self.assertTrue(all(api.is_closed() for api in clients))

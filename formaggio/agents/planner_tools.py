@@ -86,3 +86,17 @@ def build_event_tools(outreach, document, *, detector=detect_injection, progress
     return [assess_event, read_vendor_document, draft_vendor_email, save_vendor_email]
 
 
+
+
+def build_stock_tool(store, recorder, run_id, observations):
+    @tool
+    def get_stock(product: str) -> dict:
+        """Look up current stock of one catalog product; no planning skill is needed."""
+        found = store.resolve(product)
+        if found is None:
+            return {"error": "Unknown product."}
+        result = {"product": found.product_id, "stock_g": store.inventory[found.product_id]}
+        recorder.event(run_id, "stock.checked", result)
+        observations.append(result)
+        return result
+    return get_stock

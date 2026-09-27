@@ -1,4 +1,4 @@
-"""Invocation-local Act 4 runtime; lesson code supplies the planner factory."""
+"""Invocation-local Acts 4–5 runtime; lesson code supplies the planner factory."""
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -12,7 +12,9 @@ from formaggio.agents.execution import ExecutionState, ModelControl, RecordedExe
 from formaggio.agents.harness_state import ApplicationContext, HarnessHistory, PreferenceMemory
 from formaggio.agents.planner_layers import Compaction, Memory, PlannerBudget, PlannerTrace, Planning
 from formaggio.agents.planner_review import run_with_review
-from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES, build_event_tools
+from formaggio.agents.skill_layer import Skills
+from formaggio.agents.skill_support import SKILL_TOOLS
+from formaggio.agents.planner_tools import HarnessToolTrace, RecordedTodos, TODO_NAMES, build_event_tools, build_stock_tool
 from formaggio.agents.runtime import ModelTrace, console_progress, make_client, run_snapshot
 from formaggio.config import MODEL, OUTPUT_DIR, ROOT, load_json
 from formaggio.operations.governance import PolicyBlocked, PolicyCheckError
@@ -26,6 +28,9 @@ def planner_prompt(prompt, planning):
         return prompt
     for text in (
         " using a visible task list",
+        "Maintain a short task list for multi-step work. ",
+        "For a sourcing task that requests a saved mock email, include a separate task to\nresolve the HTML review. ",
+        "Keep the\nreview task open until the host approves or declines; a declined action is a\nresolved review, not a saved email. ",
         "Use todos_add and todos_complete to track work. Task completion is advisory\nprogress; it never authorizes a protected action.",
         "Include a review task in your initial task list and keep it open until the\nhost approves or declines. A declined review is complete, but no file was saved.",
         "Use one initial todos_add call. Batch task completion into one todos_complete\ncall after the review is resolved, rather than updating each task separately.\n",
@@ -38,6 +43,7 @@ def planner_prompt(prompt, planning):
 class PlannerHarness:
     """Reusable configuration. Clients, sessions, task state and reviews are local to run()."""
     agent_factory: Callable
+    act: int = 4
     scenario_loader: Callable = load_scenario
     model: str = MODEL
     scenario: str = "event-shortage"
@@ -55,14 +61,18 @@ class PlannerHarness:
     layers: tuple = ()
 
     def __post_init__(self):
-        if self.scenario != "event-shortage":
-            raise ValueError("Act 4 supports event-shortage.")
+        if self.act not in {4, 5}:
+            raise ValueError("The planner harness supports Acts 4–5.")
+        if self.scenario not in ({"event-shortage", "tasting-plan", "stock-question"} if self.act == 5 else {"event-shortage"}):
+            raise ValueError("Act 4 supports event-shortage; Act 5 also supports tasting-plan and stock-question.")
         if self.execution_mode not in {"live", "fixture"}:
             raise ValueError("Unsupported execution mode.")
         if self.simulate_detector_miss and not self.fixture:
             raise ValueError("The forced detector-miss demonstration is restricted to --fixture.")
-        if any(not isinstance(layer, (PlannerTrace, PlannerBudget, Planning, Memory, Compaction)) for layer in self.layers):
+        if any(not isinstance(layer, (PlannerTrace, PlannerBudget, Planning, Memory, Compaction, Skills)) for layer in self.layers):
             raise TypeError("Unsupported planner layer.")
+        if self.act == 4 and any(isinstance(layer, Skills) for layer in self.layers):
+            raise ValueError("Use build_act5 to add skills to the planner.")
         if len({layer.name for layer in self.layers}) != len(self.layers):
             raise ValueError("Use only one layer of each name.")
 
@@ -82,14 +92,25 @@ class PlannerHarness:
         features = {layer.name: layer for layer in self.layers}
         if self.demo_compaction and "compaction" not in features:
             raise ValueError("The synthetic compaction demonstration requires the Compaction layer.")
-        request = self.scenario_loader(self.scenario)
+        files = features["skills"].snapshot() if "skills" in features else None
+        request = self.scenario_loader("standard" if self.scenario in {"tasting-plan", "stock-question"} else self.scenario)
         customer_id = request.customer_id if self.customer_id is None else self.customer_id
         if customer_id not in {c["customer_id"] for c in load_json("customers.json")}:
             raise ValueError("Choose a synthetic customer from customers.json.")
         request = request.model_copy(update={"customer_id": customer_id, "preferences": self.remember_preferences})
         store, brief = Store(), load_json("event_brief.json")
+        if self.scenario == "tasting-plan":
+            brief = {**brief, "items": load_json("workflow_proposals.json")["standard"][0],
+                     "task": "Prepare a host tasting plan for the confirmed 12-person menu, including serving sequence, pairings, quote and open questions. This task does not request vendor outreach or order placement."}
+        elif self.scenario == "stock-question":
+            brief = {**brief, "items": [], "task": "How many grams of Epoisses are currently in stock? Answer just this stock question."}
         progress = console_progress(progress)
-        prompt = (ROOT / "prompts/event_planner.md").read_text(encoding="utf-8") if self.prompt is None else self.prompt
+        prompt_file = "prompts/skills_planner.md" if self.act == 5 else "prompts/event_planner.md"
+        prompt = (ROOT / prompt_file).read_text(encoding="utf-8") if self.prompt is None else self.prompt
+        if self.act == 5 and "skills" not in features:
+            prompt = prompt.replace("You are the Formaggio event assistant. Select skills from their advertised\nmetadata when relevant. Load the selected skill's instructions, then read the\nresources needed for the current task. Do not load every skill automatically.",
+                                    "You are the Formaggio event assistant. Skill discovery and loading are disabled; use the available tools directly.")
+            prompt += "\nA sourcing draft still requires the approved email template. If it is unavailable, report that limitation."
         prompt = planner_prompt(prompt, "planning" in features)
         prompt += "\nAuthoritative classroom shop policy:\n" + store.policy.model_dump_json()
         state = ExecutionState()
@@ -106,10 +127,14 @@ class PlannerHarness:
                 "context_tokens": 16000, "output_tokens": 2400,
                 "max_active_seconds": features["budget"].seconds if "budget" in features else None,
                 "max_approval_requests": 2, "max_message_characters": 64000, "web_shell_arbitrary_file_access": False})
-        async with RecordedExecution(recorder, snapshot, case_id=self.scenario, act=4, model=model,
+        if self.act == 5:
+            snapshot["harness"]["skills"] = files is not None
+            snapshot["skill_files"] = files.files if files is not None else {}
+        async with RecordedExecution(recorder, snapshot, case_id=self.scenario, act=self.act, model=model,
                                      mode="fixture" if self.fixture else self.execution_mode) as execution:
             run_id = execution.run_id
             outreach = VendorOutreach(store, request, brief["items"], recorder, run_id, Path(self.output_root or OUTPUT_DIR))
+            outreach.require_template = self.act == 5
             tool_trace = None
             try:
                 with (recorded_trace(recorder, run_id, "harness.event_planning") if "trace" in features else nullcontext()):
@@ -130,6 +155,8 @@ class PlannerHarness:
                     async def task_state():
                         return [i.to_dict() for i in await todos.load_items(session, source_id=todo_provider.source_id)] if todos else []
                     async def capsule():
+                        if self.scenario == "stock-question":
+                            return {"task": brief["task"], "scope": "Stock lookup only; no event or outreach requested."}
                         return {"confirmed_request": request.model_dump(mode="json"), "confirmed_menu": brief["items"],
                             "saved_preferences": preferences,
                             "precedence": "Current request wins. Saved preferences are oldest to newest; later conflicting soft preferences win. Hard constraints stay mandatory.",
@@ -149,23 +176,39 @@ class PlannerHarness:
                             return {"flagged": False, "signals": [], "detector": "forced-miss-test"}
                         recorder.event(run_id, "injection.test_override", {"forced_miss": True})
                     tools = build_event_tools(outreach, document, detector=detector, progress=progress)
+                    skill_provider, skill_access, stock = None, None, []
+                    if files is not None:
+                        skill_provider, skill_access = features["skills"].attach(files, recorder, run_id, outreach, progress)
+                    if self.act == 5:
+                        get_stock = build_stock_tool(store, recorder, run_id, stock)
+                        tools = [get_stock] if self.scenario == "stock-question" else [*tools, get_stock]
                     tool_trace = HarnessToolTrace(recorder, run_id,
-                        [t.name for t in tools] + (TODO_NAMES if todos else []),
+                        [t.name for t in tools] + (TODO_NAMES if todos else []) + (SKILL_TOOLS if files is not None else []),
                         progress if "trace" in features else None, details="trace" in features, execution_state=state)
                     middleware = [ModelControl(state)]
                     if "trace" in features:
                         middleware.append(ModelTrace(recorder, run_id, progress, max_calls=None,
                                                       model=model, label=features["trace"].label))
                     middleware.append(tool_trace)
+                    if skill_access is not None:
+                        middleware.append(skill_access)
                     if self.fixture:
-                        from formaggio.fixtures.harness_fixture import HarnessFixture
-                        api = execution.own(HarnessFixture("other@example.com" if self.simulate_detector_miss else brief["vendor_recipient"],
-                                                            planning=todos is not None).client())
+                        recipient = "other@example.com" if self.simulate_detector_miss else brief["vendor_recipient"]
+                        if self.act == 5:
+                            from formaggio.fixtures.skills_fixture import SkillsFixture
+                            fixture = SkillsFixture(self.scenario, recipient=recipient,
+                                                    planning=todos is not None, skills=files is not None)
+                        else:
+                            from formaggio.fixtures.harness_fixture import HarnessFixture
+                            fixture = HarnessFixture(recipient, planning=todos is not None)
+                        api = execution.own(fixture.client())
                     else:
                         api = api_client if api_client is not None else execution.own(AsyncOpenAI(timeout=45, max_retries=0))
                     client, _, _ = make_client(model, middleware, api, function_limits=state.limits)
                     history = HarnessHistory()
-                    agent = self.agent_factory(client, tools, prompt, history=history, context=context, todo_provider=todo_provider)
+                    skill_options = {"skills_provider": skill_provider} if self.act == 5 else {}
+                    agent = self.agent_factory(client, tools, prompt, history=history, context=context,
+                                               todo_provider=todo_provider, **skill_options)
                     session = agent.create_session()
                     if self.demo_compaction:
                         old = []
@@ -177,11 +220,16 @@ class PlannerHarness:
                     text = await run_with_review(agent, session, brief["task"], outreach, reviewer, recorder, run_id,
                                                  decision_source=self.decision_source, active_budget=state.active_budget)
                     status = "saved" if outreach.artifacts else "blocked" if tool_trace.blocked_reason else "declined" if "decline" in outreach.decisions.values() else "draft_only" if outreach.drafts else "needs_followup"
+                    if not tool_trace.blocked_reason and self.scenario in {"stock-question", "tasting-plan"}:
+                        status = ("answered" if stock else "needs_followup") if self.scenario == "stock-question" else "plan_proposed"
                     result = {"run_id": run_id, "status": status, "agent_text": text, "tasks": await task_state(),
                         "model_calls": state.model_calls, "scripted": self.fixture or self.execution_mode == "fixture",
                         "compactions": context.count, "preferences": preferences, "reason": tool_trace.blocked_reason,
-                        "assessment": outreach.assess(), "stock": [], "artifacts": [str(p) for p in outreach.artifacts.values()],
+                        "assessment": outreach.assess() if self.scenario != "stock-question" else None, "stock": stock, "artifacts": [str(p) for p in outreach.artifacts.values()],
                         "order_placed": False, "email_transmitted": False}
+                    if self.act == 5:
+                        result.update(skills_loaded=skill_access.loaded if skill_access else [],
+                                      skill_resources=skill_access.resources if skill_access else [])
                     recorder.event(run_id, "harness.result", result)
             except PolicyCheckError:
                 raise

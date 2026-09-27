@@ -457,7 +457,36 @@ python cli.py --act 5 --fixture --email-decision approve
 
 These scripted responses demonstrate the integration. To observe the model's own skill choices, repeat a command without `--fixture`; omit the test-decision flag for interactive review.
 
-**Code to read:** [act5_skills.py](acts/act5_skills.py), [skill_support.py](formaggio/agents/skill_support.py), [tasting-planning/SKILL.md](skills/tasting-planning/SKILL.md), and [vendor-outreach/SKILL.md](skills/vendor-outreach/SKILL.md).
+**Notebook:** [Act 5: skills on the shared planner](notebooks/act_5.ipynb). Use the same explicit run API as the earlier acts:
+
+```python
+from acts.act5_skills import build_act5
+from cli import print_harness_result
+from formaggio.operations.observability import Recorder
+
+lesson = build_act5(fixture=True, scenario="stock-question")
+with Recorder("outputs/notebook.sqlite") as recorder:
+    result = await lesson.run(recorder, progress=print)
+print_harness_result(result)
+```
+
+`build_act5(...)` reuses the Act 4 planner and its trace, budget, planning, memory, and compaction layers, then adds `Skills(skills_root)`. The model-call allowance is 16 to accommodate skill reads; the tool allowance remains 20 and active execution time remains 120 seconds across review resumes. Skill calls count toward those same limits.
+
+**Concept: skills add guidance and resources, not permission.** The `Skills` layer snapshots the approved files afresh for each `.run(...)`, exposes metadata through the native SDK provider, and records bodies/resources only when loaded. Each invocation has its own provider, loaded-skill list, resource list, and outreach template. Editing a template between runs changes the next run's snapshot; editing a file during a run blocks access to that changed file.
+
+| Experiment | Expected effect |
+|---|---|
+| `lesson.without("skills")` | Removes skill metadata and loading tools; direct stock lookup and tasting assessment remain available |
+| Remove skills for `event-shortage` | Outreach stays blocked because Act 5 still requires its approved email template; no draft or approval is fabricated |
+| `lesson.without("trace")` | Removes detailed model telemetry while retaining skill path, content-integrity, and required audit checks |
+| `lesson.without("compaction")` | Keeps history while still refreshing confirmed constraints, tasks, and review decisions |
+| Reuse `build_act5(skills_root=...)` after editing your skill copy | Takes a new file snapshot on the next run without rebuilding the lesson configuration |
+
+The host review callback is the same as Act 4. A skill cannot authorize its own email, change the allowed recipient, enable script execution, or remove customer constraints. Removing memory or planning also does not remove these checks. Fixture scripts adapt to removed layers so the comparison exercises the configured tools.
+
+Acts 4–5 now share one execution adapter; the temporary legacy driver has been removed. Existing CLI and evaluator entry points keep their result fields and default behavior.
+
+**Code to read:** [act5_skills.py](acts/act5_skills.py) for the lesson; [skill_layer.py](formaggio/agents/skill_layer.py) for the named layer; [skill_support.py](formaggio/agents/skill_support.py) for native discovery and guarded reads; [tasting-planning/SKILL.md](skills/tasting-planning/SKILL.md) and [vendor-outreach/SKILL.md](skills/vendor-outreach/SKILL.md) for the guidance.
 
 **Checkpoint:** Explain how a skill differs from a tool, and why reading instructions cannot approve a protected action.
 
@@ -609,7 +638,8 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 | [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
 | [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
 | [Act 3 workflow harness](formaggio/agents/workflow_runtime.py) and [layers](formaggio/agents/workflow_layers.py) | Graph execution, manager pause/resume, and cumulative active budgets |
-| [Act 4 planner harness](formaggio/agents/planner_runtime.py) and [layers](formaggio/agents/planner_layers.py) | Planning, memory, optional compaction, and mandatory host review |
+| [Acts 4–5 planner harness](formaggio/agents/planner_runtime.py) and [layers](formaggio/agents/planner_layers.py) | Planning, memory, optional compaction, and mandatory host review |
+| [Skills layer](formaggio/agents/skill_layer.py) and [skill access](formaggio/agents/skill_support.py) | Per-run snapshots, native discovery, and governed resource loading |
 | [Shared execution](formaggio/agents/execution.py) | Per-run counters, active time, resource cleanup, final status, and tracing scopes |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
@@ -622,9 +652,9 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 
 ### Shared execution groundwork
 
-Acts 1–4 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
+Acts 1–5 use the shared execution module through their harnesses and named layers. The act adapter still owns shop setup, prompts, tools, and its result format. Required tool admission and audit remain active when detailed tracing is removed.
 
-Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Acts 3–4 leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Act 5 retains its existing driver in `planner_legacy.py` until its migration, using the shared planner tools and review interfaces. Act 6 retains its driver and continues to reuse the workflow and planner support interfaces.
+Each invocation gets fresh counters, resources, and a time budget. `ActiveBudget.measure()` can cover multiple execution segments. Acts 3–5 leave human review outside those segments while retaining the remaining time and call counts. Acts 1–2 use one continuous segment. Acts 4–5 share the planner runtime, with Act 5 adding the Skills layer. Act 6 retains its driver and continues to reuse the workflow and planner support interfaces.
 
 `RecordedExecution` closes explicitly owned resources before recording completion, leaves borrowed clients with their caller, and records errors or cancellation. If cleanup or finalization also fails, the original exception is preserved with a diagnostic note. A recording failure still propagates; it cannot guarantee a persisted terminal status when storage is unavailable.
 
