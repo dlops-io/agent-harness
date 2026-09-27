@@ -149,7 +149,7 @@ class ModelTrace(ChatMiddleware):
             raise MiddlewareFailure(self.failure)
         if context.stream:
             raise MiddlewareFailure("This teaching act uses non-streaming responses.")
-        if self.calls >= self.max_calls:
+        if self.max_calls is not None and self.calls >= self.max_calls:
             raise MiddlewareFailure(f"Maximum of {self.max_calls} model calls reached.")
         self.calls += 1
         options = dict(context.options or {})
@@ -201,10 +201,11 @@ class ModelTrace(ChatMiddleware):
 
 
 class ToolTrace(FunctionMiddleware):
-    def __init__(self, recorder, run_id, allowed_names, progress=None):
+    def __init__(self, recorder, run_id, allowed_names, progress=None, *, details=True):
         self.recorder, self.run_id = recorder, run_id
         self.allowed_names, self.progress = set(allowed_names), console_progress(progress)
         self.invocations = 0
+        self.details = details
 
     def record(self, event, data):
         try:
@@ -218,7 +219,7 @@ class ToolTrace(FunctionMiddleware):
         name, invocation_id = context.function.name, uuid4().hex
         self.invocations += 1
         info = {"name": name, "invocation_id": invocation_id}
-        self.record("tool.requested", {**info, "arguments": json_value(context.arguments)})
+        self.record("tool.requested", {**info, **({"arguments": json_value(context.arguments)} if self.details else {})})
         if name not in self.allowed_names:
             self.record("tool.blocked", {**info, "reason": "Tool is not exposed by this teaching act."})
             if self.progress:
@@ -237,7 +238,7 @@ class ToolTrace(FunctionMiddleware):
             if self.progress:
                 self.progress(self.recorder.redactor.clean(f"  ❌ Tool failed: {exc}"))
             raise
-        self.record("tool.completed", {**info, "result": json_value(context.result)})
+        self.record("tool.completed", {**info, **({"result": json_value(context.result)} if self.details else {})})
         if self.progress:
             # A completed invocation can still return a business rejection.
             self.progress.payload(self.recorder, f"  📦 Result ({monotonic() - started:.2f}s):",

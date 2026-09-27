@@ -50,6 +50,19 @@ The acts are separate demonstrations. Follow them in order to learn, but do not 
 
 The Docker image installs Python 3.13 and the dependencies declared in `pyproject.toml` and `uv.lock`.
 
+### Notebook path for Acts 1–2
+
+Open [the Acts 1–2 notebook](notebooks/acts_1_2.ipynb) in Jupyter or a Colab runtime with **Python 3.13 or newer**, matching this project's declared requirement. The notebook checks the active kernel version before installing dependencies; installing another Python executable alone does not change the notebook kernel. Colab runtime compatibility has not been validated here.
+
+The notebook finds or clones this repository, installs the pinned dependencies from `pyproject.toml` into the active kernel, and provides separate cells for:
+
+1. Running a normal SDK `Agent` with shop instructions and tools.
+2. Running the same agent definition through named harness layers.
+3. Removing a layer and observing the difference.
+4. Comparing basic and enriched context in Act 2.
+
+The lesson cells use top-level `await`, so no `asyncio.run()` or event-loop patching is needed. Use a repository revision containing the notebook and layer refactor. Model execution cells make live API calls; the test suite uses local HTTP fixtures.
+
 ### Start the container
 
 Run these commands **on your host machine**, from `agent-harness`:
@@ -162,6 +175,44 @@ python cli.py --act 1 --scenario standard --show-json
 
 **What to look for:** Does the proposal satisfy the independent cart check? Does the response distinguish a proposal from an order? An invalid proposal is useful evidence for the later workflow lesson.
 
+### Read the agent, then add the harness
+
+[act1_agent.py](acts/act1_agent.py) now separates `build_agent()` (a normal SDK agent) from `build_act1()` (the configured harness). The notebook first runs the SDK agent directly. Its proposal tool works without a database; the bare run has no independent final-cart report or recorded trace. Shop tools still apply their own domain rules, and SDK execution limits still apply.
+
+After that first run, this notebook cell adds the named features explicitly:
+
+```python
+from acts.act1_agent import build_agent
+from formaggio.agents.harness import Harness
+from formaggio.agents.layers import Trace, Budget, Context, CartCheck
+from formaggio.operations.observability import Recorder
+from cli import print_agent_result
+
+harness = (
+    Harness(build_agent)
+    .add(Trace())
+    .add(Budget(model_calls=8, tool_calls=20, seconds=120))
+    .add(Context("basic"))
+    .add(CartCheck())
+)
+with Recorder("outputs/notebook.sqlite") as recorder:
+    result = await harness.run(recorder, progress=print)
+print_agent_result(result)
+```
+
+| Layer | What it adds | What removing it means |
+|---|---|---|
+| `Trace()` | Detailed model/tool payloads, SDK spans, and step logs | These details disappear; call counts and required tool admission/audit records remain |
+| `Budget(...)` | Exact model/tool admission limits and a run timeout | The SDK's explicitly recorded fallback remains: 40 tool-loop iterations, no exact model/tool count or overall time budget; owned API clients retain their per-request timeout |
+| `Context("basic" / "enriched")` | Fresh, attributed context selection | The agent still receives the customer message, instructions, and tools, but no context provider is added |
+| `CartCheck()` | Independent assessment of the final proposal | The report is explicitly marked `not_run`; validation within individual shop tools still applies |
+
+For example, `harness.without("cart_check")` returns a separate configuration; use its `.run(...)` method to execute it. `.add(...)` also returns a new configuration. Each run creates fresh shop state, counters, middleware, context, and a session, so configurations can be reused or run concurrently. Caller-supplied API clients remain caller-owned.
+
+`CartCheck` reports the supplied cart and never repairs it or authorizes checkout. Required tool audit checks remain runtime responsibilities, independent of optional telemetry. The result retains the existing fields and adds `cart_check_status`: `passed`, `failed`, `no_cart`, or `not_run`.
+
+This layer API currently covers **Acts 1–2**. Later acts keep their existing workflow and harness implementations.
+
 ### Try a variation
 
 **Live:**
@@ -207,6 +258,8 @@ This will:
 - Show both responses, cart checks, and model-call counts.
 
 **What to look for:** Which facts are already available in enriched mode? Which products were filtered out? Did the model need different tool calls? One pair of runs does not establish that enriched context always performs better.
+
+In a notebook, `build_act2(mode="basic")` and `build_act2(mode="enriched")` return the same reusable harness interface; run each with `await harness.run(recorder, progress=print)`. Only the context configuration changes.
 
 **Code to read:** [act2_context.py](acts/act2_context.py) and [context.py](formaggio/agents/context.py).
 
@@ -498,6 +551,7 @@ Evaluation is a collection of specific checks, not a proof of correctness. Scrip
 | Resource | What to inspect |
 |---|---|
 | [Act entry points](acts/) (`act1_agent.py` through `act6_composition.py`) | The progression from basic agent to composed system |
+| [Acts 1–2 harness](formaggio/agents/harness.py) and [layers](formaggio/agents/layers.py) | Run lifecycle, named features, and invocation isolation |
 | [Agent support](formaggio/agents/) | Context, runtime hooks, memory, compaction, skill access, and workflow handles |
 | [Shop logic](formaggio/shop/) | Typed contracts, validation, checkout, and vendor artifacts |
 | [Operations](formaggio/operations/) | Governance and SQLite/OpenTelemetry recording |

@@ -44,7 +44,8 @@ def build_tools(store, request, recorder, run_id):
         """Record an unvalidated proposal only. Never place, approve, or reserve an order."""
         result = {"status": "unvalidated_proposal", "order_placed": False,
                   "items": [LineItem.model_validate(i).model_dump() for i in items]}
-        recorder.event(run_id, "proposal.submitted", result)
+        if recorder is not None:
+            recorder.event(run_id, "proposal.submitted", result)
         return result
 
     return [get_catalog, check_stock, price_order, get_pairings, preview_order]

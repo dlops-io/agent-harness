@@ -261,6 +261,8 @@ def print_agent_result(result):
         print("Excluded from initial context: " + ", ".join(p["product_id"] for p in excluded))
     print("\n💬 Agent's response:\n" + result["reply"].message)
     report = result["report"]
+    if result.get("cart_check_status") == "not_run":
+        print("\n🔍 Independent cart check: not run (CartCheck layer disabled).")
     if report:
         print("\n🔍 Independent cart check (no automatic repair):")
         print(f"  {report.total_grams} g; cheese subtotal ${report.subtotal_cents / 100:.2f}")
