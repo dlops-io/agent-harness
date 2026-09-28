@@ -7,6 +7,7 @@ from statistics import mean
 def enrich_report(recorder, report, batch, snapshot):
     report["excluded_cases"] = snapshot["excluded_cases"]
     report["act"] = snapshot["act"]
+    report["model"] = snapshot["model"]
     expected = {(c, n) for c in json.loads(batch["cases_json"]) for n in range(1, batch["repeats"] + 1)}
     actual = {(r["case_id"], r["repetition"]) for r in report["runs"]}
     report["missing_runs"] = [{"case_id": c, "repetition": n} for c, n in sorted(expected - actual)]

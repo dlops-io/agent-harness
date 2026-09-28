@@ -15,7 +15,10 @@ class TastingCourse(Record):
 class TastingPlan(Record):
     request_id: str
     courses: list[TastingCourse] = Field(min_length=1)
-    serving_notes: str = Field(min_length=1)
+    serving_notes: str = Field(min_length=1, description=(
+        "A short paragraph of practical serving advice only, such as timing and utensils. "
+        "Do not include section headings, the full plan, menu, quote or open questions; "
+        "the application renders those from their dedicated fields."))
     open_questions: list[str]
 
 
@@ -40,7 +43,11 @@ message and the actual tasting plans in plans; saying a plan is complete is not
 a plan. For each required menu include every accepted product exactly once in
 courses, in serving order, with a reason and tool-verified pairing_ids. Select at least one pairing
 per course when suggestions are available; otherwise use an empty list. Include serving_notes and open_questions (an empty list is allowed
-when there are none). The application renders confirmed quantities, prices and
+when there are none). Keep serving_notes to a short paragraph of practical serving
+advice only (timing, utensils, presentation). The application owns all plan headings;
+do not paste the skill's full template into serving_notes or message. Put serving
+order and pairings in courses, unresolved questions in open_questions, and only a
+concise outcome summary in message. The application renders confirmed quantities, prices and
 listed allergens from the authoritative menu; do not invent or change them.
 For the event planner use request_id "event". For composed orders use their
 confirmed request IDs and provide a plan only for placed or recommendation
@@ -89,6 +96,14 @@ def deliver_tasting_reply(text, menus, store, recorder, run_id):
                     for course in courses)):
                 errors.append(f"{plan.request_id}: use serving notes and verified pairings for every course.")
                 continue
+            # A copied skill template would duplicate the application's sections.
+            section_titles = {"confirmed brief", "tasting sequence", "pairing suggestions",
+                              "quote and availability", "open questions and next actions"}
+            if any(line.strip().strip("#*_: ").casefold() in section_titles
+                   for line in plan.serving_notes.splitlines()):
+                errors.append(f"{plan.request_id}: serving_notes must contain serving advice only, "
+                              "not the tasting-plan sections.")
+                continue
             lines = [f"## Host tasting plan — {plan.request_id}", "### Confirmed brief",
                      f"{request.party_size} guests · {request.state} · Budget ${request.budget_cents / 100:.2f}.",
                      "Confirmed allergies: " + (", ".join(request.allergies or ()) or "none") + "."]
@@ -99,7 +114,7 @@ def deliver_tasting_reply(text, menus, store, recorder, run_id):
             lines.append("### Tasting sequence")
             for index, course in enumerate(courses, 1):
                 lines.append(f"{index}. {store.products[course.product].name}: {items[course.product]} g — {course.reason}")
-            lines.extend([plan.serving_notes, "### Pairing suggestions"])
+            lines.extend(["### Serving notes", plan.serving_notes, "### Pairing suggestions"])
             for course in courses:
                 suggestions = []
                 for key in course.pairing_ids:

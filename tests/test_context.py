@@ -10,7 +10,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from acts.act1_agent import run_agent
-from acts.act2_context import preview_context
+from acts.act2_context import preview_context, summarize_context_run
 from formaggio.config import load_json
 from formaggio.agents.runtime import ConsoleProgress
 from formaggio.agents.context import build_context, instructions
@@ -47,6 +47,30 @@ class ScriptedResponses:
 
 
 class ContextTests(RecordingTest):
+    def test_context_comparison_sums_usage_and_distinguishes_equal_call_counts(self):
+        preview = preview_context()
+        events = [{"event_type": "model.response", "payload": {"usage": {
+            "input_token_count": tokens, "output_token_count": 20}}} for tokens in (100, 200)]
+        result = {"context": preview["basic"], "cart_check_status": "passed",
+                  "model_calls": 2, "tool_calls": 1}
+        basic = summarize_context_run(result, events)
+        result["context"] = preview["enriched"]
+        enriched = summarize_context_run(result, events)
+        self.assertEqual(basic["model_calls"], enriched["model_calls"])
+        self.assertEqual(basic["extra_sources"], 0)
+        self.assertEqual(enriched["extra_sources"], 3)
+        self.assertEqual(enriched["excluded_products"], 5)
+        self.assertEqual(basic["input_tokens"], 300)
+        self.assertEqual(basic["output_tokens"], 40)
+        for missing in ([], events[:1], [events[0], {"event_type": "model.response", "payload": {}}]):
+            with self.subTest(events=missing):
+                summary = summarize_context_run(result, missing)
+                self.assertIsNone(summary["input_tokens"])
+                self.assertIsNone(summary["output_tokens"])
+        zero = [{"event_type": "model.response", "payload": {"usage": {
+            "input_token_count": 0, "output_token_count": 0}}}] * 2
+        self.assertEqual(summarize_context_run(result, zero)["input_tokens"], 0)
+
     def test_preview_has_same_request_and_explained_selection(self):
         packet = preview_context()
         self.assertEqual(packet["basic"]["sources"], [])

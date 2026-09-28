@@ -45,16 +45,16 @@ class SkillLayerTests(RecordingTest):
         return result, backend
 
     def test_complete_requests_match_reviewed_delivery_contract(self):
-        # Reviewed contract: explicit final-plan schema and compact authoritative context.
+        # Reviewed contract: application-owned plan sections, serving advice only, and compact context.
         cases = [
-            ("event-shortage", "approve", {}, "161a6842c393fb992df93b826faa4d09f50221b6ab3a7df52d503678cda54478"),
-            ("event-shortage", "decline", {}, "ce5217ba31da4393ff7ce6292c704ed5cb142dd3bc8afcbbcb727dd1e8bf26e0"),
-            ("tasting-plan", "approve", {}, "c0cab7de5d5370698142d3339a837388ea83a44655c6dff25bf5c40c634c7b1b"),
+            ("event-shortage", "approve", {}, "ae6ea0b9ed9f4992ac59ac502d4db00136815949c7ac0f5daeb7e7dd397782db"),
+            ("event-shortage", "decline", {}, "fbbe42f3ed40aaad8f65b065b8ed6a41d0ba882fb027ad5e80f890f9af1a89bb"),
+            ("tasting-plan", "approve", {}, "40aec7aaf7c43e78aafa492dd9430fae296029e6249dc06850eae503a2e80037"),
             ("stock-question", "approve", {}, "04a67435df64c700f14fdfa59b444dabf6b23583651966d688a6ceacc871cef6"),
             ("event-shortage", "decline", {"demo_compaction": True, "document": "malicious"},
-             "b2b741f95c75553f0fbdd13f91c9217c8717ea93e8ba15a655c9ab5d6baabd25"),
+             "8dbaf7199a16a08a00b683ea68ac72a43dedc59756033e91cac34b3321cd6dd4"),
             ("event-shortage", "approve", {"customer_id": "shivas", "remember_preferences": ("Nonalcoholic today",)},
-             "365a2b6f6545c83ff1a71ea466bbbe8ebedcc29196c5298d352b0f0f45739160"),
+             "2138f1215a6d63d12bfb43f317b602bd489246a1d3b717ff167c3991d3f8fca5"),
         ]
         async def check():
             for scenario, decision, options, expected in cases:

@@ -44,17 +44,17 @@ class CompositionLayerTests(RecordingTest):
         return result, backend
 
     def test_complete_requests_match_reviewed_composition_contract(self):
-        # Reviewed contract: explicit final-plan schema and compact authoritative context.
+        # Reviewed contract: application-owned plan sections, serving advice only, and compact context.
         cases = [
-            ("standard", "approve", "257c883699bdf3f19d2635209e3378056b27f2252bc73ddb19799864a1193b3d"),
-            ("manager-approval", "approve", "793615c314d279bd1121fe9baea9735b13455b1eb04bae1022228f5ea3f470a3"),
-            ("manager-approval", "decline", "b3c88c3d3f4af9009bc7c6902e3b4e5794bdb474eea26a2a648644241443933f"),
-            ("two-orders", "approve", "75192ba5a2283581c5c5599ba7d780e61ce8341f41d642d46c2d2dffda040878"),
-            ("out-of-stock", "approve", "72a113ee3f953158aaa50a6ee3e124c935685d883dbcfbfbce372fcae10e6b93"),
-            ("missing-details", "approve", "e846bea4ad131ab20e70d135bee80e584eb187df90ba7ddf13d05d94bd10984b"),
-            ("complaint", "approve", "1823a0ebb5903a396794d2141423828b0a7cdd099db5d3149513d260e84e576c"),
-            ("dairy-allergy", "approve", "328a8545a51a74b5629d6dacb969c9aad7e5a34b751a50575f99a81bdeb8bdfb"),
-            ("under-sized", "approve", "185d83a2b58cb8630c7bb67d1a1795c4a582f53ccd5108f0cfeb956a501ed32e"),
+            ("standard", "approve", "71b76a0b7adcacd146f7fa172bf06d86ef77dbcdc235078ea996fff58f9e4610"),
+            ("manager-approval", "approve", "26d3a1e0e15bb5b111d5a9b517f207275d33c1c19241521392ba7b84718749ad"),
+            ("manager-approval", "decline", "87df0ee7f3fa8ef4685738b92406266355877ed6019ef66c895f98b3d68995be"),
+            ("two-orders", "approve", "8524a1207537a7cd8ca71d6a1b881425eb83a207fdb68c94b983c0c9021ab23b"),
+            ("out-of-stock", "approve", "09167f3a23d855a07b1b75acc796134272512d5eac63f0638074708c84248d27"),
+            ("missing-details", "approve", "cf1e136619f9be0e93cfea7c723cde55d656df64567c93f6a735577d33644caa"),
+            ("complaint", "approve", "72993c21a55e0437140006c8600867e28453e83c3d477f2940134b4927c24a8f"),
+            ("dairy-allergy", "approve", "6cfe7b8ead57f44c089a2b492ea00e5a3257b34c6ba3b587bb11b114e403bf51"),
+            ("under-sized", "approve", "d9fb7d81f77745f6c617b75305420ad2d61f67ab2885312b343a098bdb49ed65"),
         ]
         async def check():
             for scenario, decision, expected in cases:
@@ -78,7 +78,7 @@ class CompositionLayerTests(RecordingTest):
                     self.assertFalse(api.is_closed())
                 self.assertEqual(result["workflow_model_calls"], 2)
                 self.assertEqual(result["orders"][0]["status"], "placed")
-                for requests, expected in ((outer.requests, "72a113ee3f953158aaa50a6ee3e124c935685d883dbcfbfbce372fcae10e6b93"),
+                for requests, expected in ((outer.requests, "09167f3a23d855a07b1b75acc796134272512d5eac63f0638074708c84248d27"),
                                            (inner.requests, "338263c20f5a258010b93b5cb06798f271f3c10e259ed46870eb124993c96fa1")):
                     self.assertEqual(hashlib.sha256(normalized(requests, self.root).encode()).hexdigest(), expected)
                 self.assertEqual(len(self.events(result, "model.request")), result["model_calls"] + 2 if trace else 0)

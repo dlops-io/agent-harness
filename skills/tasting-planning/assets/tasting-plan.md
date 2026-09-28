@@ -1,5 +1,10 @@
 # Host tasting plan
 
+This is the layout the application renders. For a structured `TastingReply`, fill
+`courses`, `serving_notes`, and `open_questions`; do not copy these headings into
+`serving_notes` or `message`. Serving notes should be a short paragraph about
+practical presentation, timing, or utensils. The application adds confirmed facts.
+
 ## Confirmed brief
 Summarize guests, destination, confirmed allergies and hard requirements.
 

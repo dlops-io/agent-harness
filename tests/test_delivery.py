@@ -51,6 +51,43 @@ class DeliveryTests(RecordingTest):
         self.assertIn("### Open questions and next actions", text)
         self.assertIn("Excludes tax, shipping and pairing costs.", text)
 
+    def test_copied_template_is_rejected_instead_of_rendered_twice(self):
+        store, menus, reply = self.menu()
+        for heading in ("## Confirmed brief", "### Tasting sequence", "**Pairing suggestions**",
+                        "Quote and availability:", "## Open questions and next actions"):
+            with self.subTest(heading=heading):
+                reply["plans"][0]["serving_notes"] = heading + "\nA duplicated plan section."
+                text, ready = deliver_tasting_reply(json.dumps(reply), menus, store, self.recorder, self.run_id)
+                self.assertFalse(ready)
+                self.assertIn("serving_notes must contain serving advice only", text)
+                self.assertNotIn("A duplicated plan section.", text)
+                self.assertFalse(self.recorder.timeline(self.run_id)[-1]["payload"]["ready"])
+
+    def test_valid_serving_advice_renders_each_section_once(self):
+        store, menus, reply = self.menu()
+        text, ready = deliver_tasting_reply(json.dumps(reply), menus, store, self.recorder, self.run_id)
+        self.assertTrue(ready)
+        for heading in ("Confirmed brief", "Tasting sequence", "Serving notes", "Pairing suggestions",
+                        "Quote and availability", "Open questions and next actions"):
+            self.assertEqual(text.count("### " + heading), 1)
+        self.assertEqual(text.count("Use separate utensils."), 1)
+
+    def test_composed_order_stays_placed_when_template_delivery_fails(self):
+        async def check():
+            class CopiedTemplate(CompositionFixture):
+                def final_text(self, payload):
+                    value = json.loads(super().final_text(payload))
+                    for plan in value["plans"]:
+                        plan["serving_notes"] = "## Confirmed brief\nDuplicated full plan."
+                    return json.dumps(value)
+            backend = CopiedTemplate("standard")
+            async with backend.client() as api:
+                result = await build_act6(execution_mode="fixture").run(self.recorder, api_client=api)
+            self.assertTrue(result["order_placed"])
+            self.assertEqual(result["status"], "needs_followup")
+            self.assertIn("serving_notes must contain serving advice only", result["agent_text"])
+        asyncio.run(check())
+
     def test_pairings_can_be_omitted_only_when_no_suggestions_are_available(self):
         store, menus, reply = self.menu()
         for course in reply["plans"][0]["courses"]:
