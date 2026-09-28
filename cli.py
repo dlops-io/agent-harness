@@ -157,6 +157,9 @@ def main():
                 elif args.act == 2:
                     results = asyncio.run(run_act2(recorder, scenario=args.scenario, mode=args.context or "both",
                                           model=args.model, progress=progress, on_result=print_agent_result))
+                    from acts.act2_context import print_context_comparison, print_shipping_demo
+                    print_context_comparison(results)
+                    print_shipping_demo()
                 elif args.act in {3, 6}:
                     from acts.act3_workflow import run_act3
                     from acts.act6_composition import run_act6
@@ -290,6 +293,9 @@ def print_agent_result(result):
             print("  👤 Manager approval would be required in the later ordering workflow.")
     print(f"📊 Model calls: {result['model_calls']}. Tool calls: {result.get('tool_calls', 'not recorded')}.")
     print("🛡️ No order was placed.\n")
+    if "context_evidence" in result:
+        from acts.act2_context import print_context_evidence
+        print_context_evidence(result)
 
 
 def print_cart(report):

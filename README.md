@@ -255,6 +255,49 @@ The destination and allergy information are missing. Look for clarification inst
 
 ## 2. Context Engineering — choose what the model sees
 
+**Question: What useful information did we add, and did the agent use it appropriately?**
+
+Use `personalized` for the main comparison. Its current request omits the customer's
+saved mild-cheese and nonalcoholic-pairing preferences. Both modes receive the same
+request, tools and policies; only enriched receives the saved profile. The output
+shows actual cheese funk levels and a separate personalization check (mild = funk 0–2).
+Basic is not penalized for missing information. Read the final pairing prose manually;
+that is not automatically scored. `standard` remains a baseline where preferences
+repeat the request, so improvement may be small or absent.
+
+```bash
+python cli.py --act 2 --scenario personalized --context basic
+python cli.py --act 2 --scenario personalized --context enriched
+python cli.py --act 2 --scenario preference-override --context enriched
+```
+
+The override request explicitly asks for funk 4+, which must take priority over the
+saved mild preference. Each Act 2 command also prints a separate PA/NY counterexample:
+the same raw-milk cart is rejected for PA and passes for NY. This demonstrates our
+validator, not a model failure or an actual law. Acts 1–2 report violations; Act 3
+uses the same validator to prevent invalid checkout.
+
+For a repeatable rejection-and-revision demonstration:
+
+```bash
+python cli.py --act 3 --scenario pa-shipping --fixture
+```
+
+Look for `Cart attempt 1: shipping`, a valid second attempt, and one receipt for the
+corrected cart. Fixtures prove this control path; live runs test model behavior.
+
+Repeat the new context cases with saved per-run checks and traces:
+
+```bash
+python cli.py --act 2 --evaluate core --case personalized --case preference-override --repeats 3 --label act2-context-live-1
+python cli.py --view-report act2-context-live-1
+```
+
+This runs both modes (12 live runs total). Enriched preference checks can fail even
+when the cart is valid. Basic preference use is ungraded; ties are valid outcomes.
+See [Tutorial questions and evidence](TUTORIAL_SCENARIOS.md) for the six-act checklist.
+
+
 **Concept: context is assembled, selected, and attributed.** Keep the model, instructions, and tools fixed while changing the information supplied before the agent runs.
 
 ### Inspect the context first
@@ -267,7 +310,7 @@ python cli.py --preview-context --scenario standard
 
 Compare the `basic` and `enriched` packets. Enriched context contains the confirmed request, eligible catalog candidates, and the current customer's saved preferences. It also records excluded products and the reasons for exclusion.
 
-### Run Act 2
+### Optional baseline with overlapping preferences
 
 **Live; runs both modes in separate sessions:**
 

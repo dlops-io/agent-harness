@@ -64,7 +64,7 @@ async def dispatch(recorder, act, case, *, model, fixture, prompt, proposer_prom
         from acts.act1_agent import run_agent
         if fixture:
             from formaggio.fixtures.evaluation_fixture import ProposalFixture
-            async with ProposalFixture(case["expect"]).client() as client:
+            async with ProposalFixture(case["expect"], case["scenario"]).client() as client:
                 return await run_agent(recorder, **common, act=act, mode=case["context"], api_client=client, execution_mode="fixture")
         return await run_agent(recorder, **common, act=act, mode=case["context"])
     if act == 3:
@@ -127,6 +127,7 @@ async def run_live_suite(recorder, label, *, act, repeats=5, case_ids=None, cont
                 "dependencies": {n: version(n) for n in ("agent-framework", "openai", "pydantic")}}
     version_id = recorder.version(snapshot)
     evaluator_version = sha256((Path(__file__).read_bytes() + Path(__file__).with_name("evaluation_checks.py").read_bytes()
+                                + Path(__file__).with_name("context_evidence.py").read_bytes()
                                 + canonical({"act": act, "cases": selected}).encode())).hexdigest()
     experiment_id = recorder.experiment(label, version_id, evaluator_version, [c["case_id"] for c in selected], repeats)
     failures = 0

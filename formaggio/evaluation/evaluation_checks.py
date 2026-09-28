@@ -70,6 +70,10 @@ def assess_run(act, case, result, events):
             check("process.preview_matches_final", [i.model_dump() for i in report.items],
                   [i.model_dump() for i in preview.items] if preview else None,
                   preview is not None and preview.items == report.items)
+        if act == 2 and case["scenario"] in {"personalized", "preference-override"}:
+            from formaggio.evaluation.context_evidence import context_evidence
+            evidence = context_evidence(request, result["reply"], result["context"], Store())
+            checks.extend(CheckResult.model_validate(c) for c in evidence["checks"])
         status = observed
     elif act in {3, 6}:
         values = [result["outcome"].model_dump(mode="json")] if act == 3 else result["orders"]

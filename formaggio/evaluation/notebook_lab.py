@@ -38,6 +38,10 @@ def golden_cases(act):
             "plan_proposed": "Deliver a structured plan for the confirmed menu with verified pairings; place no order.",
             "answered": "Report the fixture stock: 900 g of Epoisses. Load no irrelevant skills.",
         }[expected]
+        if scenario == "personalized":
+            criteria += " Enriched: match the supplied mild preference (all cheese funk 0–2). Basic: preference use is not graded because it received no saved profile. Review pairing prose manually."
+        if scenario == "preference-override":
+            criteria += " Include today's requested funk 4+ cheese even when the saved profile prefers mild cheeses."
         if act == 6:
             criteria += " Deliver a checked tasting plan for any accepted menu; otherwise no plan is required."
         if case.get("document") == "malicious":

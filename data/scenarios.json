@@ -492,5 +492,64 @@
       "required_min_funk": 4,
       "wants_pairings": true
     }
+  },
+  {
+    "id": "personalized",
+    "description": "Saved mild-cheese and nonalcoholic preferences are absent from today's request.",
+    "request": {
+      "customer_id": "shivas",
+      "intent": "order",
+      "party_size": 12,
+      "budget_cents": 15000,
+      "state": "PA",
+      "allergies": [
+        "nuts"
+      ],
+      "allergies_confirmed": true,
+      "order_authorized": true,
+      "required_countries": [],
+      "required_min_funk": null,
+      "wants_pairings": true
+    }
+  },
+  {
+    "id": "preference-override",
+    "description": "Today asks for a funky cheese despite the saved mild preference.",
+    "request": {
+      "customer_id": "shivas",
+      "intent": "order",
+      "party_size": 12,
+      "budget_cents": 15000,
+      "state": "PA",
+      "allergies": [
+        "nuts"
+      ],
+      "allergies_confirmed": true,
+      "order_authorized": true,
+      "required_countries": [],
+      "required_min_funk": 4,
+      "wants_pairings": true
+    }
+  },
+  {
+    "id": "pa-shipping",
+    "description": "A scripted raw-milk proposal must be rejected before mock checkout.",
+    "request": {
+      "customer_id": "pavlos",
+      "intent": "order",
+      "party_size": 12,
+      "budget_cents": 15000,
+      "state": "PA",
+      "allergies": [
+        "nuts"
+      ],
+      "allergies_confirmed": true,
+      "order_authorized": true,
+      "required_countries": [
+        "France"
+      ],
+      "required_min_funk": 4,
+      "wants_pairings": true
+    }
   }
 ]

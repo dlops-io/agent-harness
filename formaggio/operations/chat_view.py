@@ -275,6 +275,10 @@ def build_chat(events, *, run=None, snapshot=None, ask=None):
                 step("Context", f"{item.get('source', '?')}: {item.get('reason', '')}")
             for item in _records(p.get("excluded_products")):
                 step("Context", f"Excluded {item.get('product_id', '?')}: " + ", ".join(map(str, item.get("reasons", []))))
+        elif name == "context.evidence":
+            for check in _records(p.get("checks")):
+                step("Context use", f"{check.get('status', 'unmeasured')}: {check.get('explanation', '')}")
+            step("Context use", str(p.get("interpretation", "")))
         elif name == "compaction.applied":
             step("Context", f"History shortened: {p.get('before_characters', '?')} → {p.get('after_characters', '?')} characters · input event {p.get('input_event_id', 'not recorded')}")
         elif name in {"skill.loaded", "skill.resource_read"}:

@@ -7,13 +7,14 @@ from formaggio.fixtures.harness_fixture import HarnessFixture
 
 
 class ProposalFixture(HarnessFixture):
-    def __init__(self, expectation):
+    def __init__(self, expectation, scenario="standard"):
         super().__init__()
         self.expectation = expectation
+        self.scenario = scenario
 
     def __call__(self, request):
         self.requests.append(json.loads(request.content))
-        items = load_json("workflow_proposals.json")["standard"][0] if self.expectation == "accepted" else []
+        items = load_json("workflow_proposals.json")[self.scenario][0] if self.expectation == "accepted" else []
         text = json.dumps({"items": items, "message": "Scripted proposal or abstention; review the recorded checks."})
         output = ([{"type": "function_call", "id": "fc_preview", "call_id": "preview", "name": "preview_order",
                     "arguments": json.dumps({"items": items}), "status": "completed"}] if items and len(self.requests) == 1 else

@@ -120,8 +120,8 @@ class NotebookTests(RecordingTest):
 
     def test_acts_1_2_preserve_agent_requests_and_compare_context(self):
         state, backends, output, review = self.execute_notebook("act_1_2.ipynb")
-        self.assertEqual(len(backends), 4)
-        for backend in backends[1:3]:
+        self.assertEqual(len(backends), 5)
+        for backend in backends[1:2]:
             self.assertEqual(backend.requests, backends[0].requests)
         self.assertNotEqual(backends[2].requests, backends[3].requests)
         self.assertEqual(state["act1_result"]["cart_check_status"], "passed")
@@ -136,7 +136,7 @@ class NotebookTests(RecordingTest):
 
     def test_complete_notebook_runs_all_acts_and_optional_context_evaluation(self):
         state, backends, output, review = self.execute_notebook("full_notebook.ipynb", repeats=2)
-        self.assertEqual(len(backends), 8)  # Four main runs plus two modes repeated twice.
+        self.assertEqual(len(backends), 9)  # Five main runs plus two modes repeated twice.
         self.assertEqual(len(state["context_trials"]), 4)
         self.assertTrue(all(row["cart_check"] == "passed" for row in state["context_trials"]))
         self.assertEqual([row["mode"] for row in state["context_trials"]],
@@ -173,7 +173,7 @@ class NotebookTests(RecordingTest):
             raise RuntimeError("Injected evaluation failure")
         lesson = type("BrokenLesson", (), {"run": fail})()
         namespace = {"RUN_CONTEXT_EVALUATION": True, "CONTEXT_REPEATS": 2,
-                     "SCENARIO": "standard", "MODEL": "fixture-model", "DB_PATH": self.root / "trials.sqlite",
+                     "CONTEXT_SCENARIO": "personalized", "MODEL": "fixture-model", "DB_PATH": self.root / "trials.sqlite",
                      "Recorder": type(self.recorder), "build_act2": lambda **kwargs: lesson}
         output = io.StringIO()
         with redirect_stdout(output):

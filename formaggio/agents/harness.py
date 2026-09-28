@@ -111,6 +111,11 @@ class Harness:
                     "items": [i.model_dump() for i in reply.items], "order_placed": False,
                     "cart_report": run.report.model_dump() if run.report else None,
                     "cart_check_status": run.cart_check_status})
-            return {"run_id": run.run_id, "mode": run.mode, "reply": reply, "report": run.report,
+            result = {"run_id": run.run_id, "mode": run.mode, "reply": reply, "report": run.report,
                     "context": run.packet, "model_calls": run.model_calls, "tool_calls": run.tool_calls,
                     "cart_check_status": run.cart_check_status}
+            if self.act == 2:
+                from formaggio.evaluation.context_evidence import context_evidence
+                result["context_evidence"] = context_evidence(run.request, reply, run.packet, run.store)
+                recorder.event(run.run_id, "context.evidence", result["context_evidence"])
+            return result

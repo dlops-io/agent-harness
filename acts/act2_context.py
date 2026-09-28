@@ -35,7 +35,10 @@ def summarize_context_run(result, events):
             "excluded_products": len(result["context"]["excluded_products"]),
             "model_calls": result["model_calls"], "tool_calls": result["tool_calls"],
             "input_tokens": total("input_token_count"),
-            "output_tokens": total("output_token_count")}
+            "output_tokens": total("output_token_count"),
+            "mild_match": result.get("context_evidence", {}).get("mild_match"),
+            "preference_check": next((c["status"] for c in result.get("context_evidence", {}).get("checks", [])), "not_applicable")}
+
 
 
 def build_act2(*, scenario="standard", mode="enriched", model=MODEL, execution_mode="live", prompt=None):
@@ -61,3 +64,55 @@ async def run_act2(recorder, *, scenario="standard", mode="both", model=MODEL,
         if on_result:
             on_result(result)
     return results
+
+
+def shipping_policy_demo():
+    """Fixed counterexample using the same validator as CartCheck and checkout.
+
+    Separate from the model's proposal; fresh inventory, no writes or model calls.
+    """
+    store = Store()
+    request = load_scenario("pa-shipping")
+    from formaggio.config import load_json
+    items = load_json("workflow_proposals.json")["pa-shipping"][0]
+    return {state: store.validate(request.model_copy(update={"state": state}), items)
+            for state in ("PA", "NY")}
+
+
+def print_context_evidence(result):
+    evidence = result.get("context_evidence")
+    if not evidence:
+        return
+    print("\n📚 What useful information did we add, and was it used appropriately?")
+    preferences = evidence["preferences_supplied"]
+    print("  Saved preferences supplied: " + ("; ".join(preferences) or "none"))
+    print("  Actual selections: " + (", ".join(f"{p['product']} (funk {p['funk']})" for p in evidence["products"]) or "no known products"))
+    if preferences == ["French cheeses", "funky cheeses"]:
+        print("  Standard is a baseline: these preferences overlap today's request. Try --scenario personalized.")
+    for check in evidence["checks"]:
+        print(f"  {check['status'].upper()}: {check['explanation']}")
+    if "nonalcoholic pairings" in preferences:
+        print("  👀 " + evidence["manual_review"])
+    print("  " + evidence["interpretation"])
+
+
+def print_context_comparison(results):
+    print("\n📊 Comparison — quality first; call counts alone do not show improvement")
+    for result in results:
+        evidence = result.get("context_evidence", {})
+        match = evidence.get("mild_match")
+        mild = "yes" if match is True else "no" if match is False else "unmeasured"
+        status = ", ".join(c["status"] for c in evidence.get("checks", [])) or "unmeasured"
+        print(f"  {result['mode']}: valid cart = {result['cart_check_status']}; all cheeses mild (funk 0–2) = {mild}; context check = {status}")
+    print("  Basic is not graded on preferences it never received. Matching mild cheeses alone does not prove retrieval helped.")
+
+
+def print_shipping_demo():
+    print("\n🛡️ Harness policy check — fixed counterexample, NOT the agent's cart")
+    print("  Same cart: Comté 350 g + Bûcheron 350 g + Époisses 300 g. Change only the destination.")
+    for state, report in shipping_policy_demo().items():
+        print(f"  {state}: {'PASS' if report.ok else 'REJECTED'}")
+        for violation in report.violations:
+            print(f"    {violation.rule}: {violation.detail}")
+    print("  CartCheck reports this violation in Acts 1–2. Act 3's workflow and checkout enforce it before placing an order.")
+    print("  This models store/regulatory policy enforcement with a FICTIONAL classroom PA rule, not actual legal advice. No order placed by this check.")
