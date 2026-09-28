@@ -1,7 +1,8 @@
 """Typed Act 3 steps. Validation, approval and checkout are mandatory graph nodes."""
 from agent_framework import Executor, WorkflowContext, handler, response_handler
 
-from formaggio.agents.context import build_context
+from formaggio.agents.context import build_context, customer_ask
+from formaggio.operations.workflow_view import proposal_details, proposal_lines
 from formaggio.shop.data_models import ApprovalTicket, CartProposal, WorkflowOutcome, WorkflowState
 from formaggio.operations.governance import PolicyBlocked, PolicyCheckError
 
@@ -22,6 +23,8 @@ class ConfirmRequest(ShopStep):
 
     @handler
     async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowOutcome]):
+        if self.progress:
+            self.progress("\n👤 Customer ask:\n" + self.recorder.redactor.clean(customer_ask(state.request)))
         self.enter()
         if state.request.intent == "complaint":
             await ctx.yield_output(WorkflowOutcome(status="escalated",
@@ -47,6 +50,11 @@ class ProposeCart(ShopStep):
         self.enter()
         packet = build_context(state.request, self.checkout.store, "enriched")
         proposal = CartProposal.model_validate(await self.proposer(state, packet))
+        details = {"attempt": state.attempts + 1, **proposal_details(self.checkout.store, proposal.items, state.items)}
+        self.recorder.event(self.run_id, "cart.proposed", details)
+        if self.progress:
+            for line in proposal_lines(details):
+                self.progress(self.recorder.redactor.clean(line))
         await ctx.send_message(state.model_copy(update={"items": tuple(proposal.items),
             "attempts": state.attempts + 1, "pairings": (), "ticket_id": None}))
 
@@ -59,7 +67,17 @@ class ValidateCart(ShopStep):
         self.recorder.event(self.run_id, "cart.validated", {"attempt": state.attempts, **report.model_dump(mode="json")})
         if self.progress:
             self.progress(f"Cart attempt {state.attempts}: " + (f"valid; ${report.subtotal_cents / 100:.2f}" if report.ok
-                          else "; ".join(f"{v.rule}: {v.detail}" for v in report.violations)))
+                          else "; ".join(f"{v.rule}: {v.product_id + ' — ' if v.product_id else ''}{v.detail}" for v in report.violations)))
+            products = [self.checkout.store.resolve(item.product) for item in state.items]
+            destination = (state.request.state or "").strip().upper()
+            if (destination in self.checkout.store.policy.raw_milk_blocked_states
+                    and products and all(p is not None for p in products)
+                    and not any(v.rule == "shipping" for v in report.violations)):
+                self.progress(f"  ✅ Shipping policy for {destination}: passed; no raw-milk cheese in this proposal.")
+            if not report.ok:
+                action = ("Revision limit reached; no order will be placed." if state.attempts >= 1 + self.checkout.store.policy.max_revisions
+                          else "Cart rejected; requesting a revised proposal before checkout.")
+                self.progress("  🛡️ " + action)
         if not report.ok and state.attempts >= 1 + self.checkout.store.policy.max_revisions:
             explanation = self.checkout.store.catalog_allergy_conflict(state.request)
             await ctx.yield_output(WorkflowOutcome(status="unresolved", attempts=state.attempts, report=report,

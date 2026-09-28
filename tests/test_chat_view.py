@@ -62,7 +62,7 @@ class ChatViewTests(RecordingTest):
         result = asyncio.run(build_act3(fixture=True, scenario="out-of-stock").run(self.recorder))
         view = self.view(result)
         self.assertEqual(view["answer"], "")
-        self.assertTrue(any(c["title"] == "Mock order receipt" for c in view["cards"]))
+        self.assertTrue(any(c["title"] == "Order receipt" for c in view["cards"]))
         self.assertIn("Failed · attempt 1", view["groups"]["Cart checks"][0])
         self.assertIn("Passed · attempt 2", view["groups"]["Cart checks"][1])
         self.assertIn("Scripted responses", render_run(self.recorder, result["run_id"]))

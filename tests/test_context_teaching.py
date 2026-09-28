@@ -119,3 +119,28 @@ class ContextTeachingTests(RecordingTest):
             self.assertIn(phrase, text)
         self.assertNotIn('"items":', text)
         self.assertTrue(text.strip().splitlines()[-1].startswith('💾 Recorded in'))
+
+    def test_persistent_raw_milk_proposals_stop_without_order_or_stock_change(self):
+        from unittest.mock import AsyncMock, patch
+        checkout = Checkout()
+        before = dict(checkout.store.inventory)
+        manager = AsyncMock(side_effect=AssertionError("Invalid carts cannot reach manager review"))
+        output = []
+        with patch("formaggio.agents.workflow_runtime.AsyncOpenAI", side_effect=AssertionError("Fixture cannot call the model")):
+            result = asyncio.run(run_act3(self.recorder, scenario="pa-shipping-blocked", fixture=True,
+                                          checkout=checkout, manager=manager, progress=output.append))
+        outcome = result["outcome"]
+        self.assertEqual(outcome.status, "unresolved")
+        self.assertEqual(outcome.attempts, 1 + checkout.store.policy.max_revisions)
+        self.assertIsNone(outcome.receipt)
+        self.assertEqual(checkout.orders, ())
+        self.assertEqual(checkout.store.inventory, before)
+        self.assertEqual(result["model_calls"], 0)
+        manager.assert_not_awaited()
+        events = self.recorder.timeline(result["run_id"])
+        validations = [e["payload"] for e in events if e["event_type"] == "cart.validated"]
+        self.assertEqual(len(validations), outcome.attempts)
+        for report in validations:
+            self.assertEqual([(v["rule"], v["product_id"]) for v in report["violations"]], [("shipping", "comte")])
+        self.assertFalse(any(e["event_type"] in {"order.placing", "order.placed", "approval.requested"} for e in events))
+        self.assertEqual(sum("shipping:" in line for line in output), outcome.attempts)

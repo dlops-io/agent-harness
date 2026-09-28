@@ -189,10 +189,10 @@ def build_chat(events, *, run=None, snapshot=None, ask=None):
         card("Proposal only", "No order was placed.")
     elif final_type == "workflow.result":
         card(f"Workflow outcome: {final.get('status', 'not recorded')}",
-             _text(final.get("message")), _tone(final.get("status")))
+             "Order placed." if final.get("status") == "placed" and final.get("receipt") else _text(final.get("message")), _tone(final.get("status")))
         receipt = _mapping(final.get("receipt"))
         if receipt:
-            card("Mock order receipt", f"Receipt: {receipt.get('order_id', '?')}\n" + _cart(receipt.get("report")), "good")
+            card("Order receipt", f"Receipt: {receipt.get('order_id', '?')}\n" + _cart(receipt.get("report")), "good")
         elif final.get("report"):
             card("Checked cart", _cart(final["report"]))
     elif final_type in {"harness.result", "composition.result"}:
@@ -249,6 +249,14 @@ def build_chat(events, *, run=None, snapshot=None, ask=None):
             step("Agent activity", "Tool returned: " + str(p.get("name", p.get("tool", "not recorded"))) + " · check its result for the business outcome")
         elif name == "workflow.step":
             step("Workflow steps", str(p.get("executor_id", "Unspecified step")).replace("_", " "))
+        elif name == "cart.proposed":
+            from formaggio.operations.workflow_view import proposal_lines
+            try:
+                lines = proposal_lines(p)
+            except (KeyError, TypeError):
+                lines = ["Proposal details incomplete; inspect the recorded event."]
+            for line in lines:
+                step("Proposed carts", line)
         elif name == "cart.validated":
             violations = _records(p.get("violations"))
             attempt = f" · attempt {p['attempt']}" if "attempt" in p else ""

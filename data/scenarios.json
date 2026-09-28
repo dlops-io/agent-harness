@@ -551,5 +551,26 @@
       "required_min_funk": 4,
       "wants_pairings": true
     }
+  },
+  {
+    "id": "pa-shipping-blocked",
+    "description": "Every scripted proposal contains raw-milk Comté for PA; stop at the revision limit without placing an order.",
+    "request": {
+      "customer_id": "pavlos",
+      "intent": "order",
+      "party_size": 12,
+      "budget_cents": 15000,
+      "state": "PA",
+      "allergies": [
+        "nuts"
+      ],
+      "allergies_confirmed": true,
+      "order_authorized": true,
+      "required_countries": [
+        "France"
+      ],
+      "required_min_funk": 4,
+      "wants_pairings": true
+    }
   }
 ]

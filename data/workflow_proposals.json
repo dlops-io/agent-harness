@@ -17,5 +17,6 @@
   "manager-decline": [[{"product": "comte", "grams": 1600}, {"product": "mimolette", "grams": 1600}, {"product": "taleggio", "grams": 1600}]],
   "pa-shipping": [[{"product": "comte", "grams": 350}, {"product": "bucheron", "grams": 350}, {"product": "epoisses", "grams": 300}], [{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]],
   "personalized": [[{"product": "bucheron", "grams": 350}, {"product": "mimolette", "grams": 350}, {"product": "gouda", "grams": 300}]],
-  "preference-override": [[{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]]
+  "preference-override": [[{"product": "epoisses", "grams": 300}, {"product": "bucheron", "grams": 350}, {"product": "taleggio", "grams": 350}]],
+  "pa-shipping-blocked": [[{"product": "comte", "grams": 350}, {"product": "bucheron", "grams": 350}, {"product": "epoisses", "grams": 300}]]
 }

@@ -143,7 +143,7 @@ def main():
             from acts.act2_context import run_act2
             if args.act == 3:
                 print("Workflow lesson — " + ("FIXTURE proposals; no model calls." if args.fixture else f"model: {args.model}."))
-                print("Mock orders only. Inventory and approval state last for this process; traces are saved in SQLite.")
+                print("Classroom simulation — no real purchase, shipment, or email. Orders and inventory last for this process; traces are saved in SQLite.")
                 if args.manager_decision:
                     print(f"TEST manager response configured: {args.manager_decision}")
             elif args.act == 6:
@@ -338,9 +338,9 @@ def print_cart(report):
 def print_workflow_result(result):
     outcome = result["outcome"]
     print(f"\n--- WORKFLOW {outcome.status.upper()} — run {result['run_id']} ---")
-    print(outcome.message)
+    print("Order placed." if outcome.status == "placed" and outcome.receipt else outcome.message)
     if outcome.receipt:
-        print(f"Mock receipt: {outcome.receipt.order_id}")
+        print(f"Receipt: {outcome.receipt.order_id}")
     if outcome.report:
         print_cart(outcome.report)
     for selection in outcome.pairings:

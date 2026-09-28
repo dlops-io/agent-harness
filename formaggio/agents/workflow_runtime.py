@@ -145,6 +145,10 @@ class WorkflowHarness:
         checkout = checkout or Checkout()
         request = request or load_scenario(self.scenario)
         progress = console_progress(progress)
+        if progress:
+            progress(f"\n🧪 Scenario: {self.scenario} · {'SCRIPTED proposals' if self.fixture else 'LIVE proposals' if self.execution_mode == 'live' else 'LOCAL test proposals'}")
+            if not self.fixture and self.execution_mode == "live" and self.scenario in {"pa-shipping", "pa-shipping-blocked"}:
+                progress("ℹ️ The live model chooses its cart; this scenario does not force raw milk. Use --fixture to demonstrate the scripted shipping rejection.")
         prompt = (ROOT / "prompts/cart_proposer.md").read_text(encoding="utf-8") if self.prompt is None else self.prompt
         prompt += "\nAuthoritative classroom shop policy:\n" + checkout.store.policy.model_dump_json()
         proposals = None
