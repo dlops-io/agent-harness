@@ -4,6 +4,7 @@ import asyncio
 from contextlib import ExitStack, chdir, redirect_stdout
 import inspect
 import io
+import itertools
 import json
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ from formaggio.fixtures.harness_fixture import HarnessFixture
 from tests.support import RecordingTest
 from tests.test_context import ScriptedResponses
 from tests.test_layers import local_api
+from tests.test_shipping_live_lesson import ShippingResponses
 
 
 NOTEBOOKS = ("act_1_2.ipynb", "act_3.ipynb", "act_4.ipynb", "act_5.ipynb", "act_6.ipynb")
@@ -23,6 +25,7 @@ class NotebookTests(RecordingTest):
 
     def execute_notebook(self, name, *, decision="approve", repeats=0):
         namespace, clients, backends = {}, [], []
+        shipping_backends = []
         rendered = []
         output = io.StringIO()
         original_client = HarnessFixture.client
@@ -39,6 +42,14 @@ class NotebookTests(RecordingTest):
             clients.append(api)
             return api
 
+        def shipping_client(*args, **kwargs):
+            # Test the notebook's live intake/revision path with local HTTP responses.
+            backend = ShippingResponses()
+            api = local_api(backend)
+            shipping_backends.append(backend)
+            clients.append(api)
+            return api
+
         async def execute():
             for index, cell in enumerate(self.notebook(name)["cells"]):
                 tags = cell["metadata"].get("tags", [])
@@ -52,11 +63,16 @@ class NotebookTests(RecordingTest):
                         isinstance(node, ast.Import) and any(alias.name == "pandas" for alias in node.names)
                     ) and not (isinstance(node, ast.ImportFrom) and node.module == "IPython.display")]
                     source = ast.unparse(tree)
+                shipping_cell = name == "full_notebook.ipynb" and "act3-shipping" in tags
+                if shipping_cell:
+                    namespace["USE_FIXTURES"] = False
                 compiled = compile(source, f"{name}:cell-{index}", "exec",
                                    flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 value = eval(compiled, namespace)
                 if inspect.isawaitable(value):
                     await value
+                if shipping_cell:
+                    namespace["USE_FIXTURES"] = True
                 if "imports" in tags:
                     # Replace only the notebook's client; do not patch openai globally,
                     # since the later acts' fixtures construct their own local clients.
@@ -77,11 +93,12 @@ class NotebookTests(RecordingTest):
             stack.enter_context(patch.object(HarnessFixture, "client", fixture_client))
             for module in ("workflow_runtime", "planner_runtime", "composition_runtime"):
                 stack.enter_context(patch(f"formaggio.agents.{module}.AsyncOpenAI",
-                                          side_effect=AssertionError("Notebook attempted a live API call")))
+                                          side_effect=shipping_client if name == "full_notebook.ipynb" and module == "workflow_runtime"
+                                          else AssertionError("Notebook attempted a live API call")))
             # Exercise the real callback, including its invalid-answer retry.
-            review = stack.enter_context(patch("builtins.input", side_effect=["invalid", decision] * 2))
+            review = stack.enter_context(patch("builtins.input", side_effect=itertools.cycle(["invalid", decision])))
             asyncio.run(execute())
-        self.assertEqual(len(rendered), {"act_1_2.ipynb": 3, "act_5.ipynb": 2, "full_notebook.ipynb": 9}.get(name, 1))
+        self.assertEqual(len(rendered), {"act_1_2.ipynb": 3, "act_5.ipynb": 2, "full_notebook.ipynb": 18}.get(name, 1))
         for html in rendered:
             self.assertIn("Request and response", html)
             self.assertIn("Steps and checks", html)
@@ -89,6 +106,9 @@ class NotebookTests(RecordingTest):
         self.assertTrue(all(api.is_closed() for api in clients))
         self.assertNotIn("unit-test-credential", output.getvalue())
         self.assertNotIn("local-fixture-key", output.getvalue())
+        if name == "full_notebook.ipynb":
+            self.assertEqual([len(b.requests) for b in shipping_backends], [1, 2])
+            self.assertEqual(shipping_backends[0].requests[0], shipping_backends[1].requests[0])
         return namespace, backends, output.getvalue(), review
 
     def test_notebooks_keep_imports_at_top_and_share_settings_without_saved_outputs(self):
@@ -136,17 +156,37 @@ class NotebookTests(RecordingTest):
 
     def test_complete_notebook_runs_all_acts_and_optional_context_evaluation(self):
         state, backends, output, review = self.execute_notebook("full_notebook.ipynb", repeats=2)
-        self.assertEqual(len(backends), 9)  # Five main runs plus two modes repeated twice.
+        self.assertEqual(len(backends), 10)  # Six main runs plus two modes repeated twice.
         self.assertEqual(len(state["context_trials"]), 4)
         self.assertTrue(all(row["cart_check"] == "passed" for row in state["context_trials"]))
         self.assertEqual([row["mode"] for row in state["context_trials"]],
                          ["basic", "enriched", "basic", "enriched"])
-        self.assertEqual(state["act3_result"]["outcome"].status, "placed")
-        self.assertEqual(state["act4_result"]["status"], "saved")
-        self.assertEqual(state["act5_results"]["stock-question"]["skills_loaded"], [])
+        before, after = state["act3_before_result"], state["act3_after_result"]
+        self.assertEqual(before["outcome"].status, "blocked")
+        self.assertIsNone(before["outcome"].receipt)
+        self.assertEqual(after["outcome"].status, "placed")
+        self.assertEqual([v.product_id for v in before["outcome"].report.violations], ["comte"])
+        self.assertNotIn("comte", [i.product for i in after["outcome"].report.items])
+        self.assertEqual(state["act4_interactive_result"]["status"], "saved")
+        self.assertEqual(state["act4_approve_result"]["status"], "saved")
+        self.assertEqual(state["act4_decline_result"]["status"], "declined")
+        self.assertTrue(state["act4_approve_result"]["artifacts"])
+        self.assertEqual(state["act4_decline_result"]["artifacts"], [])
+        self.assertEqual(state["act5_sourcing_result"]["status"], "saved")
+        self.assertIn("vendor-outreach", state["act5_sourcing_result"]["skills_loaded"])
+        self.assertEqual(state["act5_stock_result"]["skills_loaded"], [])
+        self.assertIn("tasting-planning", state["act5_tasting_result"]["skills_loaded"])
+        self.assertTrue(state["act6_interactive_result"]["order_placed"])
+        self.assertTrue(state["act6_approve_result"]["order_placed"])
+        declined = state["act6_decline_result"]
+        self.assertFalse(declined["order_placed"])
+        self.assertEqual(declined["orders"][0]["status"], "declined")
+        self.assertIsNone(declined["orders"][0].get("receipt"))
+        self.assertNotEqual(state["act2_basic_result"]["run_id"], state["context_results"]["basic"]["run_id"])
+        self.assertNotEqual(state["act2_enriched_result"]["run_id"], state["context_results"]["enriched"]["run_id"])
         self.assertTrue(state["act6_result"]["order_placed"])
         self.assertTrue(state["delivery_checks"][-1]["ready"])
-        self.assertEqual(review.call_count, 4)
+        self.assertEqual(review.call_count, 6)
         evaluation = state["evaluation_report"]
         self.assertEqual(evaluation["expected_runs"], 6)
         self.assertEqual(evaluation["passed"], 6)
@@ -157,12 +197,8 @@ class NotebookTests(RecordingTest):
         self.assertEqual(saved["report"], evaluation)
         self.assertEqual(set(saved["traces"]), {run["run_id"] for run in evaluation["runs"]})
         self.assertTrue(all(events for events in saved["traces"].values()))
-        reports = state["shipping_reports"]
-        self.assertEqual([(v.rule, v.product_id) for v in reports["PA"].violations], [("shipping", "comte")])
-        self.assertTrue(reports["NY"].ok)
-        self.assertEqual(reports["PA"].items, reports["NY"].items)
-        self.assertEqual(reports["PA"].subtotal_cents, reports["NY"].subtotal_cents)
-        self.assertIn("raw milk", output)
+        self.assertIn("RAW MILK", output)
+        self.assertIn("Removed: Comté", output)
         self.assertIn("Repeated comparison", output)
 
     def test_optional_evaluation_keeps_failed_trials_in_the_denominator(self):
@@ -184,7 +220,7 @@ class NotebookTests(RecordingTest):
         self.assertIn("0/2 carts passed; 2 run errors", output.getvalue())
         self.assertIn("unavailable (0/2 trials measured)", output.getvalue())
 
-    def test_complete_notebook_has_one_database_setting_and_matches_reference_lessons(self):
+    def test_complete_notebook_has_shared_settings_and_matches_cli_tutorial(self):
         full = self.notebook("full_notebook.ipynb")
         all_code = ["".join(cell["source"]) for cell in full["cells"] if cell["cell_type"] == "code"]
         assignments = [node for text in all_code for node in ast.walk(ast.parse(text))
@@ -193,14 +229,62 @@ class NotebookTests(RecordingTest):
         self.assertEqual(len(assignments), 1)
         self.assertIn('request = load_scenario(SCENARIO)',
                       next(text for text in all_code if "# @title The Customer Request" in text))
-        for name in NOTEBOOKS:
-            for cell in self.notebook(name)["cells"]:
-                if cell["cell_type"] == "code" and "lesson" in cell["metadata"].get("tags", []):
-                    # Colab's cosmetic title comments do not affect lesson equivalence.
-                    expected = ast.dump(ast.parse("".join(cell["source"])))
-                    self.assertIn(expected, [ast.dump(ast.parse(text)) for text in all_code])
+        expected = [
+            ("python cli.py --act 1 --scenario standard", "Harness", "SCENARIO", None, None),
+            ("python cli.py --act 2 --scenario personalized --context basic", "build_act2", "CONTEXT_SCENARIO", "basic", None),
+            ("python cli.py --act 2 --scenario personalized --context enriched", "build_act2", "CONTEXT_SCENARIO", "enriched", None),
+            ("python cli.py --act 2 --compare", "run_act2", "CONTEXT_SCENARIO", "both", None),
+            ("python cli.py --act 3", "build_act3", "pa-shipping-blocked", None, "review_order"),
+            ("python cli.py --act 3 --scenario pa-shipping", "build_act3", "pa-shipping", None, "review_order"),
+            ("python cli.py --act 4", "build_act4", "event-shortage", None, "review_email"),
+            ("python cli.py --act 4 --email-decision approve", "build_act4", "event-shortage", None, "approve_review"),
+            ("python cli.py --act 4 --email-decision decline", "build_act4", "event-shortage", None, "decline_review"),
+            ("python cli.py --act 5", "build_act5", "event-shortage", None, "review_email"),
+            ("python cli.py --act 5 --scenario stock-question", "build_act5", "stock-question", None, "review_email"),
+            ("python cli.py --act 5 --scenario tasting-plan", "build_act5", "tasting-plan", None, "review_email"),
+            ("python cli.py --act 6", "build_act6", "standard", None, "review_order"),
+            ("python cli.py --act 6 --scenario manager-approval", "build_act6", "manager-approval", None, "review_order"),
+            ("python cli.py --act 6 --scenario manager-approval --manager-decision approve", "build_act6", "manager-approval", None, "approve_review"),
+            ("python cli.py --act 6 --scenario manager-approval --manager-decision decline", "build_act6", "manager-approval", None, "decline_review"),
+        ]
+        tutorial = [c for c in full["cells"] if "cli_command" in c["metadata"]]
+        self.assertEqual([c["metadata"]["cli_command"] for c in tutorial], [row[0] for row in expected])
+        def value(node):
+            return node.id if isinstance(node, ast.Name) else ast.literal_eval(node)
+        for cell, (command, factory, scenario, mode, reviewer) in zip(tutorial, expected):
+            with self.subTest(command=command):
+                tree = ast.parse("".join(cell["source"]))
+                call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                            and isinstance(n.func, ast.Name) and n.func.id == factory)
+                options = {k.arg: value(k.value) for k in call.keywords}
+                self.assertEqual(options["scenario"], scenario)
+                self.assertEqual(options["model"], "MODEL")
+                if factory in {"build_act3", "build_act4", "build_act5", "build_act6"}:
+                    self.assertEqual(options["fixture"], "USE_FIXTURES")
+                if mode:
+                    self.assertEqual(options["mode"], mode)
+                if reviewer:
+                    run = next(n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                               and isinstance(n.func, ast.Attribute) and n.func.attr == "run")
+                    review = next(k.value for k in run.keywords if k.arg in {"manager", "reviewer"})
+                    self.assertEqual(value(review), reviewer)
+                    if reviewer in {"approve_review", "decline_review"}:
+                        self.assertEqual(options["decision_source"], "test_option")
+        setting_source = next("".join(c["source"]) for c in full["cells"] if "settings" in c["metadata"].get("tags", []))
+        settings = {n.targets[0].id: value(n.value) for n in ast.parse(setting_source).body
+                    if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+                    and isinstance(n.value, ast.Constant)}
+        self.assertEqual(settings["SCENARIO"], "standard")
+        self.assertEqual(settings["CONTEXT_SCENARIO"], "personalized")
+        self.assertFalse(settings["USE_FIXTURES"])
+        lesson_seen = False
         for cell in full["cells"]:
             if cell["cell_type"] == "code":
+                if "lesson" in cell["metadata"].get("tags", []):
+                    lesson_seen = True
+                tree = ast.parse("".join(cell["source"]))
+                if any(isinstance(n, (ast.Import, ast.ImportFrom)) for n in ast.walk(tree)):
+                    self.assertFalse(lesson_seen)
                 self.assertEqual(cell["outputs"], [])
                 self.assertIsNone(cell["execution_count"])
                 compile("".join(cell["source"]), "complete-notebook", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
