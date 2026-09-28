@@ -11,11 +11,11 @@ from formaggio.operations.observability import Recorder
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    action = parser.add_mutually_exclusive_group(required=True)
+    action = parser.add_mutually_exclusive_group(required=False)
     action.add_argument("--act", type=int, choices=[1, 2, 3, 4, 5, 6], help="1: simple agent; 2: context; 3: workflow; 4: harness; 5: skills; 6: composition")
     action.add_argument("--preview-context", action="store_true", help="Inspect both context packets offline")
     action.add_argument("--foundation", action="store_true", help="Run fixed proposals; makes no model calls")
-    action.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
+    parser.add_argument("--compare", nargs="*", metavar="LABEL", help="With --act 2: run a personalization comparison. Alone: compare two saved evaluation labels.")
     action.add_argument("--report", metavar="LABEL", help="Read an existing evaluation batch without model calls")
     action.add_argument("--view-report", metavar="LABEL", help="Export a saved agent evaluation as an HTML scorecard with traces")
     action.add_argument("--inspect-run", metavar="RUN_ID")
@@ -48,6 +48,17 @@ def main():
     parser.add_argument("--remember-preference", action="append", default=[], help="Acts 4–5: explicitly save a customer-confirmed preference")
     parser.add_argument("--memory-db", type=Path, help="Acts 4–5: separate operational preference database")
     args = parser.parse_args()
+    lesson_comparison = args.act == 2 and args.compare == []
+    other_action = any([args.act, args.preview_context, args.foundation, args.report,
+                        args.view_report, args.inspect_run, args.list_runs, args.backup])
+    if args.compare is not None:
+        if lesson_comparison:
+            if args.evaluate or args.context not in {None, "both"}:
+                parser.error("--act 2 --compare runs both modes; omit --evaluate and use no --context or --context both.")
+        elif len(args.compare) != 2 or other_action:
+            parser.error("Use --act 2 --compare, or --compare BEFORE AFTER alone for saved evaluations.")
+    elif not other_action:
+        parser.error("Choose an action such as --act, --report, or --compare BEFORE AFTER.")
     from formaggio.agents.runtime import ConsoleProgress
     progress = ConsoleProgress(show_json=args.show_json)
     if args.show_json and (not args.act or args.evaluate):
@@ -68,11 +79,11 @@ def main():
         parser.error("--prompt-file applies to --evaluate or --foundation.")
     if args.html_output and not args.view_report:
         parser.error("--html-output requires --view-report LABEL.")
-    if args.json_output and not (args.evaluate or args.report or args.compare):
+    if args.json_output and not (args.evaluate or args.report or args.compare or lesson_comparison):
         parser.error("--json-output applies to evaluation/report/comparison.")
     if args.json_output and args.json_output.resolve() == args.db.resolve():
         parser.error("JSON output must not overwrite the SQLite database.")
-    args.scenario = args.scenario or ("event-shortage" if args.act in {4, 5} else "standard")
+    args.scenario = args.scenario or ("personalized" if lesson_comparison else "event-shortage" if args.act in {4, 5} else "standard")
     if args.foundation and not args.label:
         parser.error("--foundation requires --label; recorded labels cannot be overwritten")
     if args.act == 1 and args.context not in {None, "basic"}:
@@ -155,11 +166,28 @@ def main():
                     result = asyncio.run(run_act1(recorder, scenario=args.scenario, model=args.model, progress=progress))
                     print_agent_result(result)
                 elif args.act == 2:
+                    if lesson_comparison:
+                        from formaggio.agents.context import customer_ask, load_scenario
+                        print("\n👤 Customer ask:\n" + customer_ask(load_scenario(args.scenario)))
+                        print("\nTwo fresh live runs: basic receives no saved profile; enriched receives the customer's saved preferences.")
+                    def comparison_progress(message):
+                        if str(message).startswith("Starting "):
+                            print(message, flush=True)
+                    compact = lesson_comparison and not args.show_json
                     results = asyncio.run(run_act2(recorder, scenario=args.scenario, mode=args.context or "both",
-                                          model=args.model, progress=progress, on_result=print_agent_result))
+                                          model=args.model, progress=comparison_progress if compact else progress,
+                                          on_result=None if compact else print_agent_result))
                     from acts.act2_context import print_context_comparison, print_shipping_demo
-                    print_context_comparison(results)
-                    print_shipping_demo()
+                    comparison = print_context_comparison(results, {
+                        r["run_id"]: recorder.timeline(r["run_id"]) for r in results})
+                    if compact:
+                        for completed in results:
+                            print(f"\n💬 {completed['mode'].upper()} answer:\n{completed['reply'].message}")
+                        print("\nNo orders were placed. Full tool calls and model inputs are in the saved traces.")
+                    if lesson_comparison:
+                        export_json(args.json_output, {"scenario": args.scenario, **comparison})
+                    else:
+                        print_shipping_demo()
                 elif args.act in {3, 6}:
                     from acts.act3_workflow import run_act3
                     from acts.act6_composition import run_act6

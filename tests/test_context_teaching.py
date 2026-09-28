@@ -56,7 +56,7 @@ class ContextTeachingTests(RecordingTest):
             return results
         results=asyncio.run(run()); output=io.StringIO()
         with redirect_stdout(output):print_context_comparison(results)
-        self.assertIn('all cheeses mild',output.getvalue())
+        self.assertIn('all cheeses mild',output.getvalue().lower())
         self.assertIn('not_applicable',output.getvalue())
         self.assertNotIn('"items":',output.getvalue())
 

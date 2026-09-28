@@ -266,6 +266,9 @@ that is not automatically scored. `standard` remains a baseline where preference
 repeat the request, so improvement may be small or absent.
 
 ```bash
+python cli.py --act 2 --compare
+
+# Individual runs, if you want to inspect each tool call:
 python cli.py --act 2 --scenario personalized --context basic
 python cli.py --act 2 --scenario personalized --context enriched
 python cli.py --act 2 --scenario preference-override --context enriched
@@ -295,7 +298,7 @@ python cli.py --view-report act2-context-live-1
 
 This runs both modes (12 live runs total). Enriched preference checks can fail even
 when the cart is valid. Basic preference use is ungraded; ties are valid outcomes.
-See [Tutorial questions and evidence](TUTORIAL_SCENARIOS.md) for the six-act checklist.
+See [Tutorial questions and evidence](docs/TUTORIAL_SCENARIOS.md) for the six-act checklist.
 
 
 **Concept: context is assembled, selected, and attributed.** Keep the model, instructions, and tools fixed while changing the information supplied before the agent runs.
@@ -807,3 +810,21 @@ Optional prompt instructions use explicit `<!-- if:planning -->` and `<!-- if:sk
 Act 6 refreshes a compact order summary before each model call. Full receipts remain in the returned orders and audit events. Compaction events reference the corresponding `context.model_input` event instead of copying before/after message histories; detailed model inputs remain available through `--inspect-run`.
 
 The pinned agent-framework 1.19.0 can emit an approval-identity warning after it has already accepted a matching host response. The isolated diagnostic confirmed this duplicate-binding case saves the approved artifact exactly once. Keep investigating any unexpected approval failure; warnings are not globally suppressed. An SDK upgrade should be verified separately against the approval and complete-request tests.
+
+### Act 2 comparison command
+
+`python cli.py --act 2 --compare` runs two fresh live sessions on `personalized` and
+prints both answers and a side-by-side table. It measures both menus against the
+customer's mild-cheese preference, counts distinct varieties (not grams), and shows
+cart validity, calls and total token usage. The verdict reports improvement, a tie,
+or a regression; it does not assume enriched will win. Empty or unknown carts are
+unmeasured, and invalid carts cannot support an overall improvement claim.
+
+Use `--scenario preference-override` to examine today's request taking priority;
+that scenario does not use the all-mild rubric to declare a winner. Add `--show-json`
+for full progress details, or `--json-output outputs/context-comparison.json` to save
+the table. Traces are recorded in the normal database. The separate PA policy probe
+remains available in individual Act 2 runs and the Act 3 `pa-shipping` fixture.
+
+`python cli.py --compare BEFORE AFTER` still compares two saved evaluation labels
+without running the agents.
