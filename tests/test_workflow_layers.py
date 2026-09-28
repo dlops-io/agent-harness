@@ -176,8 +176,8 @@ class WorkflowLayerTests(RecordingTest):
                 harness = build_act3(execution_mode="fixture").without("budget").add(
                     WorkflowBudget(seconds=10 if cancel else .02))
                 task = asyncio.create_task(harness.run(self.recorder, proposer=proposer, checkout=checkout))
-                await entered.wait()
                 if cancel:
+                    await asyncio.wait_for(entered.wait(), 5)
                     task.cancel()
                 with self.assertRaises(asyncio.CancelledError if cancel else TimeoutError):
                     await task

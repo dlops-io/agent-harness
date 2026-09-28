@@ -83,7 +83,7 @@ def main():
         parser.error("--json-output applies to evaluation/report/comparison.")
     if args.json_output and args.json_output.resolve() == args.db.resolve():
         parser.error("JSON output must not overwrite the SQLite database.")
-    args.scenario = args.scenario or ("personalized" if lesson_comparison else "event-shortage" if args.act in {4, 5} else "standard")
+    args.scenario = args.scenario or ("personalized" if lesson_comparison else "pa-shipping-blocked" if args.act == 3 else "event-shortage" if args.act in {4, 5} else "standard")
     if args.foundation and not args.label:
         parser.error("--foundation requires --label; recorded labels cannot be overwritten")
     if args.act == 1 and args.context not in {None, "basic"}:

@@ -280,14 +280,14 @@ the same raw-milk cart is rejected for PA and passes for NY. This demonstrates o
 validator, not a model failure or an actual law. Acts 1–2 report violations; Act 3
 uses the same validator to prevent invalid checkout.
 
-For a repeatable rejection-and-revision demonstration:
+For a live rejection-and-revision demonstration using a submitted customer cart:
 
 ```bash
-python cli.py --act 3 --scenario pa-shipping --fixture
+python cli.py --act 3 --scenario pa-shipping
 ```
 
-Look for `Cart attempt 1: shipping`, a valid second attempt, and one receipt for the
-corrected cart. Fixtures prove this control path; live runs test model behavior.
+Look for `Cart attempt 1: shipping`, a live model revision, and a receipt only if
+the corrected cart passes. The submitted cart is input data; the model chooses the replacement.
 
 Repeat the new context cases with saved per-run checks and traces:
 
@@ -366,35 +366,40 @@ python cli.py --act 3 --scenario standard
 
 **What to look for:** The model proposes quantities, but application code chooses transitions, calculates prices, validates constraints, and places the mock order. A successful order has an application receipt. If a valid cart cannot be obtained, the workflow reports that outcome.
 
-### Three PA shipping tests: accept, refuse, recover
+### Live PA shipping lesson — Can the harness reject an invalid cart and help the model correct it?
 
-Run these scripted proposals through the real Act 3 workflow and checkout checks:
+Use **two live runs** with the same customer-submitted cart: Comté 350 g,
+Bûcheron 350 g, and Époisses 300 g, destined for PA.
 
 ```bash
-# 1. Valid non-raw-milk menu for PA: one attempt, one mock receipt.
-python cli.py --act 3 --scenario standard --fixture
+# Before: model records the customer's cart; the harness rejects it and stops.
+python cli.py --act 3
 
-# 2. Every proposal contains raw-milk Comté: three rejected attempts, no receipt.
-python cli.py --act 3 --scenario pa-shipping-blocked --fixture
-
-# 3. First proposal contains Comté, second corrects it: one rejection, one receipt.
-python cli.py --act 3 --scenario pa-shipping --fixture
+# After: same input; the harness gives feedback and the live model revises it.
+python cli.py --act 3 --scenario pa-shipping
 ```
 
-| Test | Expected result | Evidence of the harness's contribution |
-|---|---|---|
-| Valid PA cart | `PLACED`, 1 attempt | Only a cart that passes validation reaches checkout. |
-| Repeated raw-milk PA cart | `UNRESOLVED`, 3 attempts, no order | Initial proposal plus two revisions all fail shipping; the harness stops without changing inventory. |
-| Corrected PA cart | `PLACED`, 2 attempts | The first cart is rejected; only the corrected cart receives a receipt. |
+The first command defaults to `pa-shipping-blocked`. It should show Comté marked
+`RAW MILK`, a shipping violation, `WORKFLOW BLOCKED`, and no receipt.
+The second should show the same initial violation, a second model call, `Removed:
+Comté`, the model's replacement, and a validated order. If the model cannot produce
+a valid revision, the harness stops without an order; no successful result is fabricated.
 
-`UNRESOLVED` is the workflow's status when it cannot obtain a valid cart within the
-revision limit. It is a successful demonstration of preventing an invalid order.
-Being below the manager-approval threshold does not bypass shipping validation.
+The starting cart is **customer input data**, in `data/shipping_customer_cart.json`.
+It is not a prerecorded model response. The first model call records that cart
+unchanged for downstream validation; an intake integrity check rejects a changed
+cart rather than pretending the model followed the request. In the repair run,
+subsequent model calls receive the normal policies, eligible catalog, previous cart,
+and validation errors. Application code never selects the replacement.
 
-The proposer is scripted here to make each path repeatable. The workflow, validator,
-and checkout are real application code. This proves those controls handle a bad
-proposal; it does not measure whether the live model will make or fix that mistake.
-All orders are mock orders, and the PA raw-milk rule is a fictional classroom policy.
+Both runs enforce the same shipping policy. The before run stops at rejection; the
+after run allows model revision. No policy is disabled to place an invalid order.
+Orders are simulated and the PA rule is a fictional classroom policy.
+
+For a normal live order without a submitted cart, use `--scenario standard`.
+For the separate human-approval lesson, use `--scenario manager-approval` and respond
+at the prompt. `--fixture` remains available for offline regression tests, but is
+not needed for this live shipping demonstration.
 
 Now make the approval boundary predictable with a **scripted fixture**:
 
@@ -853,20 +858,9 @@ unmeasured, and invalid carts cannot support an overall improvement claim.
 Use `--scenario preference-override` to examine today's request taking priority;
 that scenario does not use the all-mild rubric to declare a winner. Add `--show-json`
 for full progress details, or `--json-output outputs/context-comparison.json` to save
-the table. Traces are recorded in the normal database. The separate PA policy probe
-remains available in individual Act 2 runs and the Act 3 `pa-shipping` fixture.
+the table. Traces are recorded in the normal database. Individual Act 2 runs also
+show a separate PA policy probe; Act 3 demonstrates rejection and live model revision
+with `--scenario pa-shipping`.
 
 `python cli.py --compare BEFORE AFTER` still compares two saved evaluation labels
 without running the agents.
-
-### Reading Act 3 output
-
-Act 3 prints the customer ask, each proposed cart's quantities and raw-milk flags,
-and the products removed, added or resized on revision. The output says `Order placed`
-and `Receipt`; the opening notice identifies the classroom simulation.
-
-`--scenario pa-shipping-blocked` **without `--fixture`** uses the live model and the
-same customer request as `standard`. The model may choose a valid cart, so a placed
-order is not a policy failure. The scenario name alone does not force a raw-milk
-product. The CLI now explains this before the model runs. For a visible removal of
-Comté and addition of Taleggio, run `--act 3 --scenario pa-shipping --fixture`.

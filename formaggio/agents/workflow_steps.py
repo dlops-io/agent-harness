@@ -60,6 +60,10 @@ class ProposeCart(ShopStep):
 
 
 class ValidateCart(ShopStep):
+    def __init__(self, *args, review_only=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.review_only = review_only
+
     @handler
     async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowOutcome]):
         self.enter()
@@ -75,9 +79,16 @@ class ValidateCart(ShopStep):
                     and not any(v.rule == "shipping" for v in report.violations)):
                 self.progress(f"  ✅ Shipping policy for {destination}: passed; no raw-milk cheese in this proposal.")
             if not report.ok:
-                action = ("Revision limit reached; no order will be placed." if state.attempts >= 1 + self.checkout.store.policy.max_revisions
+                action = ("Cart rejected; this review run stops without placing an order." if self.review_only else
+                          "Revision limit reached; no order will be placed." if state.attempts >= 1 + self.checkout.store.policy.max_revisions
                           else "Cart rejected; requesting a revised proposal before checkout.")
                 self.progress("  🛡️ " + action)
+        if self.review_only:
+            await ctx.yield_output(WorkflowOutcome(status="recommendation" if report.ok else "blocked",
+                attempts=state.attempts, report=report,
+                message=("Cart checked; this review run does not place an order." if report.ok else
+                         "Customer cart rejected: " + "; ".join(v.detail for v in report.violations) + " No order placed.")))
+            return
         if not report.ok and state.attempts >= 1 + self.checkout.store.policy.max_revisions:
             explanation = self.checkout.store.catalog_allergy_conflict(state.request)
             await ctx.yield_output(WorkflowOutcome(status="unresolved", attempts=state.attempts, report=report,

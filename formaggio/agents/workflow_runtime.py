@@ -24,11 +24,12 @@ class AgentProposer:
     Act adapters supply invocation-local controls and measure active time at
     their execution boundary. A caller may also cap each proposal individually.
     """
-    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state, proposal_timeout=None):
+    def __init__(self, recorder, run_id, prompt, model, *, api_client=None, progress=None, execution_state, proposal_timeout=None, intake=None):
         self.recorder, self.run_id, self.prompt, self.model = recorder, run_id, prompt, model
         self.api_client, self.api, self.owned, self.client = api_client, None, False, None
         self.execution_state = execution_state
         self.proposal_timeout = proposal_timeout
+        self.intake = intake
 
     async def __call__(self, state, packet):
         if self.client is None:
@@ -37,17 +38,36 @@ class AgentProposer:
             middleware = self.execution_state.middleware
             limits = self.execution_state.limits
             self.client = make_client(self.model, middleware, self.api, function_limits=limits)
-        agent = Agent(client=self.client, name="CartProposer", instructions=self.prompt,
+        taking_order = self.intake is not None and state.attempts == 0
+        if taking_order:
+            packet = self.intake["context"]
+        agent = Agent(client=self.client, name="CartProposer",
+            instructions=self.intake["prompt"] if taking_order else self.prompt,
             context_providers=[ShopContextProvider(packet, self.recorder, self.run_id)],
             default_options={**MODEL_OPTIONS, "response_format": CartProposal})
         message = customer_message(state.request)
+        if taking_order:
+            message += "\nCustomer's submitted cart (record unchanged for downstream validation):\n" + json.dumps(self.intake["items"])
         if state.report:
             feedback = {"previous_proposal": [i.model_dump() for i in state.items],
                         "validation": state.report.model_dump(mode="json")}
             message += "\nRevise the complete cart using this validation feedback:\n" + json.dumps(feedback)
         async with asyncio.timeout(self.proposal_timeout):
             result = await agent.run(message, session=agent.create_session())
-        return result.value if isinstance(result.value, CartProposal) else CartProposal.model_validate_json(result.text)
+        proposal = result.value if isinstance(result.value, CartProposal) else CartProposal.model_validate_json(result.text)
+        if taking_order:
+            def quantities(items):
+                totals = {}
+                for item in items:
+                    totals[item.product] = totals.get(item.product, 0) + item.grams
+                return totals
+            expected = CartProposal.model_validate({"items": self.intake["items"]})
+            preserved = quantities(proposal.items) == quantities(expected.items)
+            self.recorder.event(self.run_id, "cart.intake_checked", {"preserved": preserved,
+                "expected": self.intake["items"], "observed": [i.model_dump() for i in proposal.items]})
+            if not preserved:
+                raise ValueError("The model changed the submitted cart during intake. No order placed; the demo cannot claim the requested comparison.")
+        return proposal
 
     async def close(self):
         if self.owned and self.api is not None:
@@ -145,10 +165,25 @@ class WorkflowHarness:
         checkout = checkout or Checkout()
         request = request or load_scenario(self.scenario)
         progress = console_progress(progress)
+        shipping_lesson = not self.fixture and self.scenario in {"pa-shipping", "pa-shipping-blocked"}
+        intake = None
+        review_only = shipping_lesson and self.scenario == "pa-shipping-blocked"
+        if shipping_lesson:
+            if proposer is not None:
+                raise ValueError("The shipping lesson uses the model for intake and revision, not an injected proposer.")
+            submitted = load_json("shipping_customer_cart.json")
+            request = request.model_copy(update={"preferences": (*request.preferences, submitted["message"].rstrip("."))})
+            intake = {"items": submitted["items"], "prompt": (ROOT / "prompts/cart_intake.md").read_text(),
+                      "context": {"mode": "customer_cart_intake", "excluded_products": [], "sources": [
+                          {"source": "catalog.json + current_inventory", "trust": "shop_data",
+                           "reason": "Identify the submitted products before downstream policy validation.",
+                           "content": {"products": [{**p.model_dump(mode="json"), "stock_g": checkout.store.inventory[p.product_id]}
+                                                    for p in checkout.store.products.values()]}}]}}
         if progress:
             progress(f"\n🧪 Scenario: {self.scenario} · {'SCRIPTED proposals' if self.fixture else 'LIVE proposals' if self.execution_mode == 'live' else 'LOCAL test proposals'}")
-            if not self.fixture and self.execution_mode == "live" and self.scenario in {"pa-shipping", "pa-shipping-blocked"}:
-                progress("ℹ️ The live model chooses its cart; this scenario does not force raw milk. Use --fixture to demonstrate the scripted shipping rejection.")
+            if shipping_lesson:
+                progress("Customer-cart lesson: the model records the submitted cart; the harness checks it" +
+                         (" and stops. No order will be placed." if review_only else ", then asks the model to correct violations before checkout."))
         prompt = (ROOT / "prompts/cart_proposer.md").read_text(encoding="utf-8") if self.prompt is None else self.prompt
         prompt += "\nAuthoritative classroom shop policy:\n" + checkout.store.policy.model_dump_json()
         proposals = None
@@ -163,6 +198,9 @@ class WorkflowHarness:
         if budget is not None:
             budget.configure(run)
         snapshot = run_snapshot(self.model, "enriched", prompt, request, build_context(request, checkout.store, "enriched"), [])
+        if shipping_lesson:
+            snapshot.update(submitted_cart=intake["items"], intake_prompt=intake["prompt"],
+                            intake_context=intake["context"], review_only=review_only)
         snapshot.update(reply_schema=CartProposal.model_json_schema(), workflow="act3",
                         fixture_proposals=proposals, decision_source=self.decision_source,
                         layers=[layer.configuration() for layer in self.layers], function_limits=dict(run.limits),
@@ -179,11 +217,14 @@ class WorkflowHarness:
                 proposer = FixtureProposer(proposals, recorder, run.run_id)
             elif proposer is None:
                 proposer = execution.own(AgentProposer(recorder, run.run_id, prompt, self.model,
-                    api_client=api_client, progress=progress, execution_state=run))
+                    api_client=api_client, progress=progress, execution_state=run, intake=intake))
+            workflow_options = {"review_only": review_only} if shipping_lesson else {}
             workflow = self.workflow_factory(checkout, recorder, run.run_id, proposer,
-                                             progress=progress, decision_source=self.decision_source)
+                                             progress=progress, decision_source=self.decision_source, **workflow_options)
             state = WorkflowState(request=request, checkout_key=uuid4().hex)
             recorder.event(run.run_id, "request.brief", {"source": "structured_input", "request": request.model_dump(mode="json")})
+            if shipping_lesson:
+                recorder.event(run.run_id, "cart.submitted", {"source": "customer_input", "items": intake["items"]})
             with ExitStack() as scopes:
                 for layer in self.layers:
                     if isinstance(layer, WorkflowTrace):

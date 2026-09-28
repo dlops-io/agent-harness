@@ -533,7 +533,7 @@
   },
   {
     "id": "pa-shipping",
-    "description": "A scripted raw-milk proposal must be rejected before mock checkout.",
+    "description": "A customer submits Comté for PA. The model records the cart, receives the policy rejection, and proposes a corrected cart.",
     "request": {
       "customer_id": "pavlos",
       "intent": "order",
@@ -554,7 +554,7 @@
   },
   {
     "id": "pa-shipping-blocked",
-    "description": "Every scripted proposal contains raw-milk Comté for PA; stop at the revision limit without placing an order.",
+    "description": "A customer submits Comté for PA. The model records the cart and the harness rejects it. Review only: no checkout.",
     "request": {
       "customer_id": "pavlos",
       "intent": "order",

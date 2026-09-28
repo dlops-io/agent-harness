@@ -14,11 +14,11 @@ from formaggio.config import MODEL
 
 
 # %% The workflow: required checks and explicit transitions, readable without its runtime.
-def build_workflow(checkout, recorder, run_id, proposer, *, progress=None, decision_source="human"):
+def build_workflow(checkout, recorder, run_id, proposer, *, progress=None, decision_source="human", review_only=False):
     common = {"checkout": checkout, "recorder": recorder, "run_id": run_id, "progress": progress}
     confirm = ConfirmRequest(id="confirm_request", **common)
     propose = ProposeCart(proposer, **common)
-    validate = ValidateCart(id="validate_and_price", **common)
+    validate = ValidateCart(id="validate_and_price", review_only=review_only, **common)
     pair = SelectPairings(id="select_pairings", **common)
     approve = ManagerApproval(decision_source, **common)
     place = PlaceOrder(id="revalidate_and_place", **common)

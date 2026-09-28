@@ -1,0 +1,18 @@
+{
+  "description": "Customer input for both live shipping lessons, not a scripted model response.",
+  "message": "My starting cart is 350 g of Comté, 350 g of Bûcheron, and 300 g of Époisses. Please check it for delivery to PA. If the workflow asks for a revision, you may replace cheeses to meet the shop rules.",
+  "items": [
+    {
+      "product": "comte",
+      "grams": 350
+    },
+    {
+      "product": "bucheron",
+      "grams": 350
+    },
+    {
+      "product": "epoisses",
+      "grams": 300
+    }
+  ]
+}

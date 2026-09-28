@@ -44,21 +44,6 @@ class WorkflowOutputTests(RecordingTest):
         self.assertEqual(proposals[1]['removed'],[])
         self.assertEqual(proposals[1]['added'],[])
 
-    def test_live_named_scenario_explains_that_it_does_not_force_a_bad_cart(self):
-        async def run():
-            backend=ProposalResponses(revise=False)
-            async with local_api(backend) as api:
-                lines=[]
-                result=await run_act3(self.recorder,scenario='pa-shipping-blocked',api_client=api,progress=lines.append)
-                return result, lines
-        result,lines=asyncio.run(run())
-        self.assertEqual(result['outcome'].status,'placed')
-        text='\n'.join(lines)
-        self.assertIn('LIVE proposals',text)
-        self.assertIn('does not force raw milk',text)
-        self.assertIn('Use --fixture',text)
-        self.assertIn('Customer ask:',text)
-
     def test_differences_aggregate_aliases_and_preserve_unknown_products(self):
         store=Store()
         before=[LineItem(product='Comte',grams=150),LineItem(product='comte',grams=200)]
