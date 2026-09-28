@@ -618,6 +618,25 @@ Read the saved report without rerunning anything:
 python cli.py --report context-fixture-1
 ```
 
+Export the same visual scorecard used in Colab, including expandable checks, final outputs, and recorded traces:
+
+```bash
+python cli.py --view-report context-fixture-1
+```
+
+This reads the existing database and writes `outputs/reports/context-fixture-1.html`;
+open the file in your host browser through the mounted `outputs` folder. No model calls
+or browser process are started inside the container. Choose a destination or a different database with:
+
+```bash
+python cli.py --view-report context-fixture-1 --html-output outputs/my-report.html
+python cli.py --view-report COLAB_LABEL --db outputs/colab.sqlite
+```
+
+The Python equivalent is `export_evaluation_report(db_path, label, output=None)` from
+`formaggio.operations.evaluation_view`; it returns the generated HTML path. The visual
+export supports agent evaluation batches; `--report` also supports foundation batches.
+
 Labels are unique and cannot be overwritten. When repeating a batch, choose a new label. Keep the model and other settings fixed when comparing configurations.
 
 ### Step 3: run a small live comparison

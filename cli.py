@@ -17,6 +17,7 @@ def main():
     action.add_argument("--foundation", action="store_true", help="Run fixed proposals; makes no model calls")
     action.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
     action.add_argument("--report", metavar="LABEL", help="Read an existing evaluation batch without model calls")
+    action.add_argument("--view-report", metavar="LABEL", help="Export a saved agent evaluation as an HTML scorecard with traces")
     action.add_argument("--inspect-run", metavar="RUN_ID")
     action.add_argument("--list-runs", action="store_true")
     action.add_argument("--backup", type=Path, metavar="DESTINATION")
@@ -29,6 +30,7 @@ def main():
     parser.add_argument("--proposer-prompt-file", type=Path, help="Act 6 evaluation: alternate inner cart-proposer instructions")
     parser.add_argument("--skills-dir", type=Path, help="Acts 5/6 evaluation: alternate skill folders")
     parser.add_argument("--json-output", type=Path, help="Save evaluation/report/comparison JSON")
+    parser.add_argument("--html-output", type=Path, metavar="PATH", help="Destination for --view-report; defaults to <db directory>/reports/<label>.html")
     parser.add_argument("--scenario", default=None)
     parser.add_argument("--context", choices=["basic", "enriched", "both"], default=None)
     parser.add_argument("--model", default=MODEL, help="Model ID; defaults to OPENAI_CHAT_MODEL or formaggio/config.py")
@@ -64,6 +66,8 @@ def main():
         parser.error("--proposer-prompt-file applies to Act 6 evaluations.")
     if args.prompt_file and not (args.evaluate or args.foundation):
         parser.error("--prompt-file applies to --evaluate or --foundation.")
+    if args.html_output and not args.view_report:
+        parser.error("--html-output requires --view-report LABEL.")
     if args.json_output and not (args.evaluate or args.report or args.compare):
         parser.error("--json-output applies to evaluation/report/comparison.")
     if args.json_output and args.json_output.resolve() == args.db.resolve():
@@ -92,6 +96,15 @@ def main():
             parser.error(str(exc))
         if args.preview_context:
             return
+    if args.view_report:
+        from formaggio.operations.evaluation_view import export_evaluation_report
+        try:
+            destination = export_evaluation_report(args.db, args.view_report, args.html_output)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        print(f"Saved evaluation report: {destination}")
+        print("Open this HTML file in your host browser. No model calls were made.")
+        return
     with Recorder(args.db) as recorder:
         if args.evaluate:
             from formaggio.evaluation.live_evaluation import run_live_suite

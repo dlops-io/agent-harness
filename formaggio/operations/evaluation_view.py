@@ -1,8 +1,13 @@
 """Read-only evaluation scorecard with every run's checks, output and recorded trace."""
 from collections import Counter
+from contextlib import closing
 from hashlib import sha256
 from html import escape
 import json
+from pathlib import Path
+import re
+import sqlite3
+from types import SimpleNamespace
 from statistics import mean
 
 from formaggio.operations import chat_view
@@ -150,3 +155,42 @@ def render_evaluation(source, report):
 def show_evaluation(source, report):
     """Display the scorecard in Colab/Jupyter; IPython is imported only for display."""
     chat_view._display_html(render_evaluation(source, report))
+
+
+def export_evaluation_report(db_path, label, output=None):
+    """Write a standalone HTML scorecard for a saved label; return its absolute path.
+
+    The SQLite database is opened read-only. No agents, notebook display, or browser
+    are started. By default the file goes in <database directory>/reports/<label>.html.
+    """
+    from formaggio.evaluation.evaluation import report_experiment
+
+    database = Path(db_path).expanduser().resolve()
+    if not database.is_file():
+        raise FileNotFoundError(f"Recorded database not found: {database}")
+    filename = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip(".-") or "evaluation"
+    if filename != label:
+        filename += "-" + sha256(label.encode()).hexdigest()[:8]
+    destination = (Path(output).expanduser() if output is not None else
+                   database.parent / "reports" / f"{filename}.html").resolve()
+    protected = [database, *(Path(str(database) + suffix) for suffix in ("-wal", "-shm", "-journal"))]
+    if any(destination == path or (destination.exists() and path.exists() and destination.samefile(path))
+           for path in protected):
+        raise ValueError("HTML output must not overwrite the SQLite database or its journal files.")
+    try:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute("BEGIN")
+            reader = SimpleNamespace(query=lambda sql, args=(): [dict(row) for row in db.execute(sql, args)])
+            report = report_experiment(reader, label)
+            if "case_summary" not in report:
+                raise ValueError("Visual reports require an agent evaluation batch. Use --report for foundation batches.")
+            html = render_evaluation(database, report)
+    except sqlite3.Error as exc:
+        raise ValueError(f"Cannot read evaluation database: {exc}") from exc
+    document = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                '<title>Evaluation · ' + escape(label) + '</title></head><body>' + html + '</body></html>')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(document, encoding="utf-8")
+    return destination
