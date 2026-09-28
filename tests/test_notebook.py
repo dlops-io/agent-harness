@@ -45,7 +45,7 @@ class NotebookTests(RecordingTest):
                 if cell["cell_type"] != "code" or not set(tags) & {"imports", "settings", "lesson", "evaluation"}:
                     continue
                 source = "".join(cell["source"])
-                if name == "L06a_llm_agents_ii.ipynb" and "imports" in tags:
+                if name == "full_notebook.ipynb" and "imports" in tags:
                     # Colab-only introductory tables are outside the lesson replay.
                     tree = ast.parse(source)
                     tree.body = [node for node in tree.body if not (
@@ -81,7 +81,7 @@ class NotebookTests(RecordingTest):
             # Exercise the real callback, including its invalid-answer retry.
             review = stack.enter_context(patch("builtins.input", side_effect=["invalid", decision] * 2))
             asyncio.run(execute())
-        self.assertEqual(len(rendered), {"act_1_2.ipynb": 3, "act_5.ipynb": 2, "L06a_llm_agents_ii.ipynb": 9}.get(name, 1))
+        self.assertEqual(len(rendered), {"act_1_2.ipynb": 3, "act_5.ipynb": 2, "full_notebook.ipynb": 9}.get(name, 1))
         for html in rendered:
             self.assertIn("Request and response", html)
             self.assertIn("Steps and checks", html)
@@ -135,7 +135,7 @@ class NotebookTests(RecordingTest):
         review.assert_not_called()
 
     def test_complete_notebook_runs_all_acts_and_optional_context_evaluation(self):
-        state, backends, output, review = self.execute_notebook("L06a_llm_agents_ii.ipynb", repeats=2)
+        state, backends, output, review = self.execute_notebook("full_notebook.ipynb", repeats=2)
         self.assertEqual(len(backends), 8)  # Four main runs plus two modes repeated twice.
         self.assertEqual(len(state["context_trials"]), 4)
         self.assertTrue(all(row["cart_check"] == "passed" for row in state["context_trials"]))
@@ -152,7 +152,7 @@ class NotebookTests(RecordingTest):
         self.assertEqual(evaluation["passed"], 6)
         self.assertEqual(evaluation["mode"], "fixture")
         self.assertEqual(len(evaluation["case_summary"]), 3)
-        saved_path = self.root / "L06a_llm_agents_ii.ipynb" / "approve" / state["evaluation_json"]
+        saved_path = self.root / "full_notebook.ipynb" / "approve" / state["evaluation_json"]
         saved = json.loads(saved_path.read_text())
         self.assertEqual(saved["report"], evaluation)
         self.assertEqual(set(saved["traces"]), {run["run_id"] for run in evaluation["runs"]})
@@ -185,7 +185,7 @@ class NotebookTests(RecordingTest):
         self.assertIn("unavailable (0/2 trials measured)", output.getvalue())
 
     def test_complete_notebook_has_one_database_setting_and_matches_reference_lessons(self):
-        full = self.notebook("L06a_llm_agents_ii.ipynb")
+        full = self.notebook("full_notebook.ipynb")
         all_code = ["".join(cell["source"]) for cell in full["cells"] if cell["cell_type"] == "code"]
         assignments = [node for text in all_code for node in ast.walk(ast.parse(text))
                        if isinstance(node, ast.Assign) for target in node.targets
